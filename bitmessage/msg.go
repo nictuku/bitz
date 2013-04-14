@@ -15,6 +15,8 @@ import (
 // message when stream state is unknown.
 var MagicHeader = []byte("\xE9\xBE\xB4\xD9")
 
+const protocolVersion = 1
+
 type Message struct {
 	// Magic value indicating message origin network, and used to seek to
 	// next message when stream state is unknown.
@@ -33,7 +35,8 @@ type Message struct {
 // NetworkAddress identifies an address in the BitMessage network. Network
 // addresses are not prefixed with a timestamp in the version message.
 type NetworkAddress struct {
-	time     uint32 // the time
+	// XXX not needed.
+	//time     uint32 // the time
 	stream   uint32 // Stream number for this node
 	services uint64 // Same service(s) listed in version
 
@@ -125,23 +128,23 @@ const (
 // communication is possible until both peers have exchanged their version.
 type VersionMessage struct {
 	// Identifies protocol version being used by the node.
-	version int32
+	Version int32
 	// bitfield of features to be enabled for this connection.
-	services uint64
+	Services uint64
 	// standard UNIX timestamp in seconds
-	timestamp int64
+	Timestamp int64
 	// The network address of the node receiving this message (not including
 	// the time or stream number)
-	addrRecv NetworkAddress
+	AddrRecv NetworkAddress
 	// The network address of the node emitting this message (not including
 	// the time or stream number and the ip itself is ignored by the receiver)
-	addrFrom NetworkAddress
+	AddrFrom NetworkAddress
 	// Random nonce used to detect connections to self.
-	nonce uint64
+	Nonce uint64
 	// User Agent (0x00 if string is 0 bytes long)
-	userAgent varstring
+	UserAgent varstring
 	// The stream numbers that the emitting node is interested in.
-	streamNumbers []varint
+	StreamNumbers []byte
 }
 
 const (
