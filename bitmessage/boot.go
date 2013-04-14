@@ -21,7 +21,10 @@ import (
 var bootstrapNodes = [][]string{
 	//{"bootstrap8080.bitmessage.org", "8080"},
 	//{"bootstrap8444.bitmessage.org", "8444"},
-	{"217.91.97.196", "8444"},
+	// good:
+	//{"217.91.97.196", "8444"},
+
+	{"192.168.11.8", "8444"},
 }
 
 // findBootStrapNodes uses DNS resolution for finding bootstrap nodes for the
@@ -53,25 +56,24 @@ func sendVersion(nodes nodeMap) {
 	services := uint64(ConnectionServiceNodeNetwork) // + other bitfields.
 	//	t := time.Now().Second()
 	userAgent := new(bytes.Buffer)
-	encVarstring.WriteVarString(userAgent, "/bitz:1/")
-
-	//streams := []int{1}
+	//encVarstring.WriteVarString(userAgent, "/bitz:1/")
+	// Don't attract attention just yet.
+	encVarstring.WriteVarString(userAgent, "/PyBitmessage:0.2.8/")
+	streams := []int{1}
 	streamNumbers := new(bytes.Buffer)
 
-	// Protocol doesn't match code.
-	//encVarint.WriteVarInt(streamNumbers, uint64(len(streams)))
-	//for _, v := range streams {
-	//	encVarint.WriteVarInt(streamNumbers, uint64(v))
-	//}
-	// XXX
-	encVarint.WriteVarInt(streamNumbers, uint64(1))
+	encVarint.WriteVarInt(streamNumbers, uint64(len(streams)))
+	for _, v := range streams {
+		encVarint.WriteVarInt(streamNumbers, uint64(v))
+	}
 
 	v := VersionMessage{
 		Version:   1,
 		Services:  services, // | other bits.
 		Timestamp: int64(time.Now().Unix()),
 		AddrFrom: NetworkAddress{
-			services: ConnectionServiceNodeNetwork,
+			services: services,
+			ip:       [16]byte{'\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\xFF', '\xFF', 127, 0, 0, 1},
 			port:     portNumber,
 		},
 		Nonce: 31312830129, // XXX
@@ -105,9 +107,9 @@ func sendVersion(nodes nodeMap) {
 			}
 			ip := tcp.IP
 			v.AddrRecv = NetworkAddress{
-				services: ConnectionServiceNodeNetwork,
-				port:     portNumber,
-				ip:       [16]byte{'\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\xFF', '\xFF', ip[0], ip[1], ip[2], ip[3]},
+				services: services,
+				ip:       [16]byte{'\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\xFF', '\xFF', ip[0], ip[1], ip[2], ip[3]},
+				port:     uint16(tcp.Port),
 			}
 			p := new(bytes.Buffer)
 			if err = binary.Write(p, binary.BigEndian, v.Version); err != nil {
@@ -143,14 +145,27 @@ func sendVersion(nodes nodeMap) {
 			c(binary.Write(data, binary.BigEndian, MagicHeader))
 			//data := MagicHeader
 			c(binary.Write(data, binary.BigEndian, []byte("version\x00\x00\x00\x00\x00")))
-			c(binary.Write(data, binary.BigEndian, uint64(len(b))))
+			c(binary.Write(data, binary.BigEndian, uint32(len(b))))
 			s := sha512.New()
 			s.Write(b)
 			c(binary.Write(data, binary.BigEndian, s.Sum(nil)[0:4]))
 			c(binary.Write(data, binary.BigEndian, b))
 
 			what := data.Bytes()
-			log.Printf("PRINTING: %q", what)
+			log.Printf("PRINTING: magic %q, len %d", what[0:4], len(what[0:4]))
+			log.Printf("PRINTING: commnand %q, len %d", what[4:16], len(what[0:16]))
+			log.Printf("PRINTING: len %q, len %d", what[16:20], len(what[16:20]))
+			log.Printf("PRINTING: checksum %q, len %d", what[20:24], len(what[20:24]))
+
+			// Message
+			log.Printf("DATA: version %q, len %d", what[24:28], len(what[24:28]))
+			log.Printf("DATA: services %q, len %d", what[28:36], len(what[28:36]))
+			log.Printf("DATA: timestamp %q, len %d", what[36:44], len(what[36:44]))
+			log.Printf("DATA: addrecv %q, len %d", what[44:70], len(what[44:70]))
+			log.Printf("DATA: addfrom %q, len %d", what[70:96], len(what[70:96]))
+			log.Printf("DATA: nonce %q, len %d", what[96:104], len(what[96:104]))
+			log.Printf("DATA: useragent+streamnumbers %q, len %d", what[105:], len(what[105:]))
+
 			if _, err := node.conn.Write(what); err != nil {
 				log.Println("conn write failed", err)
 			}

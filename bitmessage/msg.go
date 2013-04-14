@@ -37,7 +37,7 @@ type Message struct {
 type NetworkAddress struct {
 	// XXX not needed.
 	//time     uint32 // the time
-	stream   uint32 // Stream number for this node
+	//stream   uint32 // Stream number for this node
 	services uint64 // Same service(s) listed in version
 
 	// IPv6 Address, or IPv6-mapped IPv4 address:
