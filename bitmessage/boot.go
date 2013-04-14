@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"crypto/sha512"
-
 	encVarint "github.com/spearson78/guardian/encoding/varint"
 	encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
@@ -51,7 +49,13 @@ func findBootstrapNodes() (nodes []net.TCPAddr) {
 
 const nodeConnectionRetryPeriod = time.Minute * 30
 
+// When a node creates an outgoing connection, it will immediately advertise
+// its version. The remote node will respond with its version. No futher
+// communication is possible until both peers have exchanged their version.
+
 func sendVersion(nodes nodeMap) {
+	// XXX move this to writeVersion, similar to writeNetworkAddress.
+
 	var err error
 	services := uint64(ConnectionServiceNodeNetwork) // + other bitfields.
 	//	t := time.Now().Second()
@@ -71,12 +75,7 @@ func sendVersion(nodes nodeMap) {
 		Version:   1,
 		Services:  services, // | other bits.
 		Timestamp: int64(time.Now().Unix()),
-		AddrFrom: NetworkAddress{
-			services: services,
-			ip:       [16]byte{'\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\xFF', '\xFF', 127, 0, 0, 1},
-			port:     portNumber,
-		},
-		Nonce: 31312830129, // XXX
+		Nonce:     31312830129, // XXX
 		// User Agent (0x00 if string is 0 bytes long)
 		UserAgent: userAgent.Bytes(),
 		// The stream numbers that the emitting node is interested in.
@@ -105,71 +104,47 @@ func sendVersion(nodes nodeMap) {
 				log.Println("programming error? sendVersion RemoteAddr not *TCPAddr.")
 				continue
 			}
-			ip := tcp.IP
-			v.AddrRecv = NetworkAddress{
-				services: services,
-				ip:       [16]byte{'\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\x00', '\xFF', '\xFF', ip[0], ip[1], ip[2], ip[3]},
-				port:     uint16(tcp.Port),
-			}
+
 			p := new(bytes.Buffer)
+
+			// Identifies protocol version being used by the node.
+			// int32
+
 			if err = binary.Write(p, binary.BigEndian, v.Version); err != nil {
 				log.Println("send version error", err.Error())
 			}
+			// bitfield of features to be enabled for this connection.
+			// uint64
 			if err = binary.Write(p, binary.BigEndian, v.Services); err != nil {
 				log.Println("send version error", err.Error())
 			}
-			// already in addrrecv
+			// standard UNIX timestamp in seconds
+			// int64
 			if err = binary.Write(p, binary.BigEndian, v.Timestamp); err != nil {
 				log.Println("send version error", err.Error())
 			}
+			// The network address of the node receiving this message (not including
+			// the time or stream number)
+			writeNetworkAddress(p, tcp)
+			// The network address of the node emitting this message (not including
+			// the time or stream number and the ip itself is ignored by the receiver)
+			writeNetworkAddress(p, nil)
 
-			if err = binary.Write(p, binary.BigEndian, v.AddrRecv); err != nil {
-				log.Println("send version error", err.Error())
-			}
-			if err = binary.Write(p, binary.BigEndian, v.AddrFrom); err != nil {
-				log.Println("send version error", err.Error())
-			}
+			// Random nonce used to detect connections to self.
+
 			if err = binary.Write(p, binary.BigEndian, v.Nonce); err != nil {
 				log.Println("send version error", err.Error())
 			}
+			// User Agent (0x00 if string is 0 bytes long)
 			if err = binary.Write(p, binary.BigEndian, v.UserAgent); err != nil {
 				log.Println("send version error", err.Error())
 			}
+			// The stream numbers that the emitting node is interested in.
 			if err = binary.Write(p, binary.BigEndian, v.StreamNumbers); err != nil {
 				log.Println("send version error", err.Error())
 			}
 			b := p.Bytes()
-
-			data := new(bytes.Buffer)
-
-			c(binary.Write(data, binary.BigEndian, MagicHeader))
-			//data := MagicHeader
-			c(binary.Write(data, binary.BigEndian, []byte("version\x00\x00\x00\x00\x00")))
-			c(binary.Write(data, binary.BigEndian, uint32(len(b))))
-			s := sha512.New()
-			s.Write(b)
-			c(binary.Write(data, binary.BigEndian, s.Sum(nil)[0:4]))
-			c(binary.Write(data, binary.BigEndian, b))
-
-			what := data.Bytes()
-			log.Printf("PRINTING: magic %q, len %d", what[0:4], len(what[0:4]))
-			log.Printf("PRINTING: commnand %q, len %d", what[4:16], len(what[0:16]))
-			log.Printf("PRINTING: len %q, len %d", what[16:20], len(what[16:20]))
-			log.Printf("PRINTING: checksum %q, len %d", what[20:24], len(what[20:24]))
-
-			// Message
-			log.Printf("DATA: version %q, len %d", what[24:28], len(what[24:28]))
-			log.Printf("DATA: services %q, len %d", what[28:36], len(what[28:36]))
-			log.Printf("DATA: timestamp %q, len %d", what[36:44], len(what[36:44]))
-			log.Printf("DATA: addrecv %q, len %d", what[44:70], len(what[44:70]))
-			log.Printf("DATA: addfrom %q, len %d", what[70:96], len(what[70:96]))
-			log.Printf("DATA: nonce %q, len %d", what[96:104], len(what[96:104]))
-			log.Printf("DATA: useragent+streamnumbers %q, len %d", what[105:], len(what[105:]))
-
-			if _, err := node.conn.Write(what); err != nil {
-				log.Println("conn write failed", err)
-			}
-
+			writeMessage(node.conn, "version", b)
 		}
 
 	}

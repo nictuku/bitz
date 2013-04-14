@@ -6,34 +6,76 @@ package bitmessage
 // https://bitmessage.org/wiki/Protocol_specification.
 
 import (
+	"bytes"
 	"crypto/sha512"
+	"encoding/binary"
+	"io"
+	"log"
+	"net"
+	"strings"
 
 	"code.google.com/p/go.crypto/ripemd160"
 )
 
 // Magic value indicating message origin network, and used to seek to next
 // message when stream state is unknown.
-var MagicHeader = []byte("\xE9\xBE\xB4\xD9")
+var MagicHeader = uint32(0xE9BEB4D9)
 
 const protocolVersion = 1
 
-type Message struct {
+func writeMessage(w io.Writer, command string, payload []byte) {
+
+	// TODO performance: pre-allocate byte slices, share between instances.
+	buf := new(bytes.Buffer)
+
+	if len(payload) == 0 {
+		log.Println("skipping writeMessage with empty payload")
+		return
+	}
+
 	// Magic value indicating message origin network, and used to seek to
 	// next message when stream state is unknown.
-	magic uint32
+	putUint32(buf, MagicHeader)
 	// ASCII string identifying the packet content, NULL padded (non-NULL
 	// padding results in packet rejected).
-	command [12]byte
+	putBytes(buf, []byte(command+strings.Repeat("\x00", 12-len(command))))
 	// Length of payload in number of bytes
-	length uint32
-	// First 4 bytes of sha512(payload)
-	checksum uint32
+	putUint32(buf, uint32(len(payload)))
+	// First 4 bytes of sha512(payload). 
+	// This should be a uint32, but they are the same on the wire.
+	putBytes(buf, sha512HashPrefix(payload))
 	// The actual data, a message or an object
-	payload []byte
+	putBytes(buf, payload)
+
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Println("writeMessage write failed: ", err)
+	}
+
 }
 
-// NetworkAddress identifies an address in the BitMessage network. Network
-// addresses are not prefixed with a timestamp in the version message.
+// networkAddress produces a wire format Network Address packet. If addr is
+// nil, assumes that it's about this node itself.
+func writeNetworkAddress(w io.Writer, addr *net.TCPAddr) (err error) {
+
+	// Network addresses are prefixed with a timestamp in a few cases, but not
+	// in others (e.g: version message).
+
+	buf := new(bytes.Buffer)
+	putUint64(buf, uint64(ConnectionServiceNodeNetwork)) // + other bits.
+	if addr == nil {
+		// Data refers to this node. Fill the IP address with a loopback address, but set
+		// a meaningful TCP port.
+		putBytes(buf, net.IPv6loopback)
+		putUint16(buf, portNumber)
+		_, err = w.Write(buf.Bytes())
+		return err
+	}
+	putBytes(buf, addr.IP.To16())
+	putUint16(buf, uint16(addr.Port))
+	_, err = w.Write(buf.Bytes())
+	return err
+}
+
 type NetworkAddress struct {
 	// XXX not needed.
 	//time     uint32 // the time
@@ -155,7 +197,7 @@ const (
 // The VerackMessage is sent in reply to version. This message consists of
 // only a message header with the command string "verack".
 type VerackMessage struct {
-	msg Message // Contains only a header with the command string "verack"
+	// msg Message // Contains only a header with the command string "verack"
 }
 
 // Provide information on known nodes of the network. Non-advertised nodes
@@ -252,6 +294,26 @@ type Broadcast struct {
 	// The ECDSA signature which covers everything from the msg_version to the
 	// ack_data.
 	singnature []byte
+}
+
+// These helper functions aren't strictly needed because I could just call
+// binary.Write() directly, but they help ensure I'm writing the correct type
+// expected by the protocol.
+
+func putBytes(w io.Writer, b []byte) {
+	c(binary.Write(w, binary.BigEndian, b))
+}
+
+func putUint32(w io.Writer, u uint32) {
+	c(binary.Write(w, binary.BigEndian, u))
+}
+
+func putUint16(w io.Writer, u uint16) {
+	c(binary.Write(w, binary.BigEndian, u))
+}
+
+func putUint64(w io.Writer, u uint64) {
+	c(binary.Write(w, binary.BigEndian, u))
 }
 
 func ProofOfWork(msg []byte) ([]byte, error) {
