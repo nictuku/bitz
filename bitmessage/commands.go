@@ -74,7 +74,6 @@ func writeVersion(w io.Writer, dest *net.TCPAddr) {
 
 	// User Agent (0x00 if string is 0 bytes long).
 	// varstring already encoded.
-
 	putBytes(buf, userAgent)
 
 	// The stream numbers that the emitting node is interested in.
@@ -82,83 +81,4 @@ func writeVersion(w io.Writer, dest *net.TCPAddr) {
 	putBytes(buf, streamNumbers)
 
 	writeMessage(w, "version", buf.Bytes())
-	/*
-		v := VersionMessage{
-			Version:   1,
-			Services:  services, // | other bits.
-			Timestamp: int64(time.Now().Unix()),
-			Nonce:     31312830129, // XXX
-			// User Agent (0x00 if string is 0 bytes long)
-			UserAgent: userAgent.Bytes(),
-			// The stream numbers that the emitting node is interested in.
-			StreamNumbers: streamNumbers.Bytes(),
-		}
-		log.Println("nodes", nodes)
-		for ipPort, node := range nodes {
-
-			if node.conn == nil {
-				log.Println("nil")
-				if !node.lastContacted.IsZero() && time.Since(node.lastContacted) < nodeConnectionRetryPeriod {
-					// 
-					continue
-				}
-
-				node.conn, err = net.Dial("tcp", string(ipPort))
-				//node.lastContacted = time.Now()
-
-				if err != nil {
-					log.Printf("error connecting to node %v: %v", ipPort, err)
-					continue
-				}
-				log.Println("establishing connection")
-				tcp, ok := node.conn.RemoteAddr().(*net.TCPAddr)
-				if !ok {
-					log.Println("programming error? sendVersion RemoteAddr not *TCPAddr.")
-					continue
-				}
-
-				p := new(bytes.Buffer)
-
-				// Identifies protocol version being used by the node.
-				// int32
-
-				if err = binary.Write(p, binary.BigEndian, v.Version); err != nil {
-					log.Println("send version error", err.Error())
-				}
-				// bitfield of features to be enabled for this connection.
-				// uint64
-				if err = binary.Write(p, binary.BigEndian, v.Services); err != nil {
-					log.Println("send version error", err.Error())
-				}
-				// standard UNIX timestamp in seconds
-				// int64
-				if err = binary.Write(p, binary.BigEndian, v.Timestamp); err != nil {
-					log.Println("send version error", err.Error())
-				}
-				// The network address of the node receiving this message (not including
-				// the time or stream number)
-				writeNetworkAddress(p, tcp)
-				// The network address of the node emitting this message (not including
-				// the time or stream number and the ip itself is ignored by the receiver)
-				writeNetworkAddress(p, nil)
-
-				// Random nonce used to detect connections to self.
-
-				if err = binary.Write(p, binary.BigEndian, v.Nonce); err != nil {
-					log.Println("send version error", err.Error())
-				}
-				// User Agent (0x00 if string is 0 bytes long)
-				if err = binary.Write(p, binary.BigEndian, v.UserAgent); err != nil {
-					log.Println("send version error", err.Error())
-				}
-				// The stream numbers that the emitting node is interested in.
-				if err = binary.Write(p, binary.BigEndian, v.StreamNumbers); err != nil {
-					log.Println("send version error", err.Error())
-				}
-				b := p.Bytes()
-				writeMessage(node.conn, "version", b)
-			}
-
-		}
-	*/
 }
