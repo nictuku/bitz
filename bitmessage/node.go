@@ -3,11 +3,12 @@ package bitmessage
 import (
 	//	"expvar"
 	//	"log"
+	//"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"sync"
-	"time"
 )
 
 // This file implements the main engine for this BitMessage node.
@@ -40,23 +41,58 @@ func (n *Node) Run() {
 		n.knownNodes[1][ipPort(node.String())] = remoteNode{}
 	}
 
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", portNumber))
+	if err != nil {
+		log.Fatal(err)
+	}
+	recvChan := make(chan packet)
+	go listen(listener.(*net.TCPListener), recvChan)
+
 	// Keep trying to connect to nodes.
 	// Current bitmessage clients only connect to stream 1.
 	nodes := n.knownNodes[1]
 	handshake(nodes)
 
-	t := time.Tick(time.Second * 30)
+	for {
+		select {
+		case p := <-recvChan:
+			fmt.Println("recvChan from %v, got: %q", p.raddr, p.b)
+		}
 
-	readFrom(nodes)
-
-	select {
-	case <-t:
-		log.Println("timed out")
-		return
 	}
 }
 
-func readFrom(n nodeMap) {
+type packet struct {
+	b     []byte
+	raddr net.Addr
+}
+
+// Read from TCP , writes slice of byte into channel.
+func listen(listener *net.TCPListener, recvChan chan packet) {
+	for {
+
+		conn, err := listener.AcceptTCP()
+		if err != nil {
+			continue
+		}
+		go handleConn(conn, recvChan)
+		// debug.Println("DHT: readResponse error:", err)
+	}
+}
+
+func handleConn(conn *net.TCPConn, recvChan chan packet) {
+	// TODO performance: move to an arena allocator.
+	b := make([]byte, 0, 1024)
+	for {
+		n, err := conn.Read(b)
+		b = b[0:n]
+		if n > 0 && err == nil {
+			recvChan <- packet{b, conn.RemoteAddr()}
+		}
+	}
+}
+
+func OFFreadFrom(n nodeMap) {
 	// multiplex this somehow.
 	for _, v := range n {
 		if v.conn != nil {
