@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"time"
 
 	"code.google.com/p/go.crypto/ripemd160"
 )
@@ -23,8 +24,9 @@ var MagicHeader = uint32(0xE9BEB4D9)
 
 const protocolVersion = 1
 
-func writeMessage(w io.Writer, command string, payload []byte) {
+const nodeConnectionRetryPeriod = time.Minute * 30
 
+func writeMessage(w io.Writer, command string, payload []byte) {
 	// TODO performance: pre-allocate byte slices, share between instances.
 	buf := new(bytes.Buffer)
 
@@ -38,7 +40,7 @@ func writeMessage(w io.Writer, command string, payload []byte) {
 	putUint32(buf, MagicHeader)
 	// ASCII string identifying the packet content, NULL padded (non-NULL
 	// padding results in packet rejected).
-	putBytes(buf, []byte(command+strings.Repeat("\x00", 12-len(command))))
+	putBytes(buf, []byte(nullPadCommand(command)))
 	// Length of payload in number of bytes
 	putUint32(buf, uint32(len(payload)))
 	// First 4 bytes of sha512(payload). 
@@ -50,7 +52,6 @@ func writeMessage(w io.Writer, command string, payload []byte) {
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		log.Println("writeMessage write failed: ", err)
 	}
-
 }
 
 // networkAddress produces a wire format Network Address packet. If addr is
@@ -65,6 +66,7 @@ func writeNetworkAddress(w io.Writer, addr *net.TCPAddr) (err error) {
 	if addr == nil {
 		// Data refers to this node. Fill the IP address with a loopback address, but set
 		// a meaningful TCP port.
+		log.Println("self")
 		putBytes(buf, net.IPv6loopback)
 		putUint16(buf, portNumber)
 		_, err = w.Write(buf.Bytes())
@@ -168,7 +170,7 @@ const (
 // When a node creates an outgoing connection, it will immediately advertise
 // its version. The remote node will respond with its version. No futher
 // communication is possible until both peers have exchanged their version.
-type VersionMessage struct {
+type offVersionMessage struct {
 	// Identifies protocol version being used by the node.
 	Version int32
 	// bitfield of features to be enabled for this connection.
@@ -296,24 +298,36 @@ type Broadcast struct {
 	singnature []byte
 }
 
-// These helper functions aren't strictly needed because I could just call
-// binary.Write() directly, but they help ensure I'm writing the correct type
-// expected by the protocol.
-
-func putBytes(w io.Writer, b []byte) {
-	c(binary.Write(w, binary.BigEndian, b))
+func nullPadCommand(command string) string {
+	return command + strings.Repeat("\x00", 12-len(command))
 }
 
-func putUint32(w io.Writer, u uint32) {
-	c(binary.Write(w, binary.BigEndian, u))
+// These helper functions aren't strictly needed because I could just call
+// binary.Write() directly, but they serve as documentation and help ensure
+// I'm writing the correct type expected by the protocol.
+
+func putBytes(w io.Writer, b []byte) {
+	check(binary.Write(w, binary.BigEndian, b))
+}
+
+func putInt32(w io.Writer, i int32) {
+	check(binary.Write(w, binary.BigEndian, i))
+}
+
+func putInt64(w io.Writer, i int64) {
+	check(binary.Write(w, binary.BigEndian, i))
 }
 
 func putUint16(w io.Writer, u uint16) {
-	c(binary.Write(w, binary.BigEndian, u))
+	check(binary.Write(w, binary.BigEndian, u))
+}
+
+func putUint32(w io.Writer, u uint32) {
+	check(binary.Write(w, binary.BigEndian, u))
 }
 
 func putUint64(w io.Writer, u uint64) {
-	c(binary.Write(w, binary.BigEndian, u))
+	check(binary.Write(w, binary.BigEndian, u))
 }
 
 func ProofOfWork(msg []byte) ([]byte, error) {

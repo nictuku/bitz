@@ -41,9 +41,9 @@ func (n *Node) Run() {
 	}
 
 	// Keep trying to connect to nodes.
-	// connect to stream 1.
+	// Current bitmessage clients only connect to stream 1.
 	nodes := n.knownNodes[1]
-	sendVersion(nodes)
+	handshake(nodes)
 
 	t := time.Tick(time.Second * 30)
 
