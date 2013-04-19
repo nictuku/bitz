@@ -1,24 +1,16 @@
 package bitmessage
 
+// This file implements the main engine for this BitMessage node.
+
 import (
-	//	"expvar"
-	//	"log"
-	//"bufio"
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"sync"
 	"time"
-
-	//encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
-
-var _ = time.Now()
-
-// This file implements the main engine for this BitMessage node.
 
 type Node struct {
 	cfg *Config
@@ -32,7 +24,12 @@ type Node struct {
 	recvChan chan packet
 }
 
-const portNumber = 9090
+const (
+	portNumber = 9090
+	// Using same value from PyBitmessage, which was originally added to avoid memory blowups.
+	// The protocol itself doesn't restrict it. This should certainly be removed
+	maxPayloadLength = 180000000
+)
 
 func (n *Node) Run() {
 	n.cfg = openConfig(portNumber)
@@ -44,10 +41,7 @@ func (n *Node) Run() {
 	log.Println("listener att", listener.Addr())
 	n.recvChan = make(chan packet)
 	go listen(listener.(*net.TCPListener), n.recvChan)
-
-	log.Println("foo")
 	n.boot()
-	log.Println("foobar")
 
 	for {
 		select {
@@ -65,22 +59,24 @@ type packet struct {
 
 // Read from TCP , writes slice of byte into channel.
 func listen(listener *net.TCPListener, recvChan chan packet) {
-	log.Println("listennnn")
 	for {
-		log.Println("accept:")
-		//listener.SetDeadline(time.Now().Add(time.Second * 30))
 		conn, err := listener.AcceptTCP()
-		log.Println("accept result:", conn, err)
 		if err != nil {
-			log.Println("CABOU")
 			log.Fatal("Can't listen to network port:", err)
 			return
 		}
-		log.Println("calling handleconn")
-
 		go handleConn(conn, recvChan)
-		// debug.Println("DHT: readResponse error:", err)
 	}
+}
+
+func handleConn(conn *net.TCPConn, recvChan chan packet) {
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(time.Second * 30))
+	command, _, err := readMessage(conn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("got command: %v", command)
 }
 
 type parserState struct {
@@ -91,28 +87,30 @@ type parserState struct {
 	checksum      uint32
 }
 
-func handleConn(conn *net.TCPConn, recvChan chan packet) {
-	// TODO performance: move to an arena allocator.
+// readMessage parses a BitMessage message in the protocol-defined format and
+// outputs the name of the command in the message, plus the payload content.
+// It verifies that the content matches the checksum in the message header and
+// throws an error otherwise.
+func readMessage(r io.Reader) (command string, payload []byte, err error) {
 
-	log.Println("handleconn")
-	defer conn.Close()
 	b := make([]byte, 512)
-	// Payload length contained within the first 20 bites.
-	//conn.SetReadDeadline(time.Now().Add(time.Second * 30))
-
-	// XXXX PROBLEM: FIND MESSAGE BOUNDARIES.
-
 	p := parserState{}
-	// Use a reading buffer?
-	// data := new(bytes.Buffer)
 
-	// Start by reading at least 20 bytes, to find the payload length.
-	n, err := io.ReadAtLeast(conn, b, 20)
-	log.Println("readfull")
 	data := new(bytes.Buffer)
-	log.Printf("initial bytes read: %x", b[:n])
-	// Find magic bytes.
+
+	// The first bytes aren't necessarily the beginning of a message, because
+	// the TCP stream can be in an unknown state - in case there is a bug in
+	// the network parser for example.
+	// Find the beginning of the message, marked by magic bytes.
+	var n int
 	for {
+		// Read at least 20 bytes because it's useless to proceed without
+		// knowing the payload length. If the remote server doesn't give the
+		// data this will block. In the common case, 'r' is a net.Conn with a
+		// deadline set, so it shouldn't be a problem.
+
+		n, err = io.ReadAtLeast(r, b, 20)
+
 		for p.pos = 0; p.pos < n && p.magicPos != 4; p.pos++ {
 			if b[p.pos] == MagicHeaderSlice[p.magicPos] {
 				p.magicPos += 1
@@ -123,80 +121,57 @@ func handleConn(conn *net.TCPConn, recvChan chan packet) {
 		if p.magicPos == 4 {
 			if len(b) > p.pos {
 				// Save the extra bytes that were read unnecessarily.
-				log.Printf("saving %x", b[p.pos:n])
 				data.Write(b[p.pos:n])
 			}
 			break
 		}
-		// Read more.
-		n, err = conn.Read(b)
 	}
-	// Add the magic bytes again, so numeric positions don't change.
-	//data.Write(MagicHeaderSlice)
 
-	// XXX
-	// log.Fatal should be replaced with either reset state and try again, or close connection.
+	// Read the message header, including the checksum.
+	if _, err = io.CopyN(data, r, int64(20-n-p.pos)); err != nil {
+		return "", nil, fmt.Errorf("readMessage: error reading header: %v", err.Error())
+	}
 
-	log.Printf("reading data, pos=%d, n=%d", p.pos, n)
-	//if p.pos < len(b) {
-	//	data.Write(b[p.pos:n])
-	//}
-	_, err = io.CopyN(data, conn, int64(20-n-p.pos)) // Read the whole header, including the checksum.
-	if err != nil {
-		log.Fatal("copyn ", err)
+	if err := parseHeaderFields(&p, data); err != nil {
+		return p.command, nil, fmt.Errorf("readMessage: %v", err.Error())
 	}
-	log.Println("data", data.Len())
-	//return
-	cmd := make([]byte, 12)
-	_, err = io.ReadFull(data, cmd)
-	if err != nil {
-		log.Fatal("command ", err, data.String())
-	}
-	p.command = string(cmd)
-	//	if p.command != "version" {
-	//		log.Fatalf("unknown command: %v, from %v, rest: %v", p.command, string(cmd), data.String())
-	//	}
-	log.Println("got command: %v", p.command)
-	p.payloadLength = int(readUint32(data))
-	log.Printf("PARSING: payload length of %d", p.payloadLength)
-	if p.payloadLength > 180000000 { // Using same value from PyBitmessage. The protocol itself doesn't restrict it.
-		log.Fatal("too big.")
-	}
-	p.checksum = readUint32(data)
-	log.Printf("PARSING: checksum %x", p.checksum)
 
-	// Pipe directly do disk instead of keeping all in memory?
+	// TODO performance: depending on the command type, pipe directly do disk
+	// instead of keeping all in memory?
+	// TODO performance: keep an arena of reusable byte slices.
 	b = make([]byte, p.payloadLength)
 
-	conn.SetDeadline(time.Now().Add(time.Minute * 5))
-
-	// Note: reading from conn, not data.
-	n, err = io.ReadFull(conn, b)
-	if err != nil {
-		log.Fatal(err)
+	// Note: reading from r, not data.
+	if n, err = io.ReadFull(r, b); err != nil {
+		return p.command, nil, err
 	}
-	if n == p.payloadLength {
-		// Since ReadAtLeast() guaranteed that we read the whole payload, return now.
-		log.Printf("finished reading everything. payload: %q", b)
-		return
+	if n != p.payloadLength {
+		return p.command, nil, fmt.Errorf("readMessage: stream ended before we could get the payload data")
 	}
-	log.Println("stream ended before we could get payload data")
+	if checksum := sha512HashPrefix(b); p.checksum != checksum {
+		return p.command, nil, fmt.Errorf("readMessage: checksum mismatch: message advertised %x, calculated %x", p.checksum, checksum)
+	}
+	return p.command, b, nil
 }
 
-// recvChan <- packet{b[0:n], conn.RemoteAddr()}
-
-func OFFreadFrom(n nodeMap) {
-	// multiplex this somehow.
-	for _, v := range n {
-		if v.conn != nil {
-			result, err := ioutil.ReadAll(v.conn)
-			if err != nil {
-				log.Println("readfrom error", err.Error())
-				continue
-			}
-			fmt.Printf("Received: %q", result)
-		}
+func parseHeaderFields(p *parserState, data io.Reader) (err error) {
+	if p.command, err = parseCommand(data); err != nil {
+		return fmt.Errorf("headerFields: %v", err.Error())
 	}
+	p.payloadLength = int(readUint32(data))
+	if p.payloadLength > maxPayloadLength {
+		return fmt.Errorf("headerFields: advertised payload length too large, aborting.")
+	}
+	p.checksum = readUint32(data)
+	return nil
+}
+
+func parseCommand(r io.Reader) (command string, err error) {
+	cmd := make([]byte, 12)
+	if _, err = io.ReadFull(r, cmd); err != nil {
+		return "", fmt.Errorf("parseCommand error: %v", err.Error())
+	}
+	return string(cmd), nil
 }
 
 // Things needing implementation.
@@ -205,7 +180,10 @@ func OFFreadFrom(n nodeMap) {
 //
 // Zero out the list of already contacted nodes every 30 minutes, to give it another chance.
 //
-// self.receivedgetbiginv = False #Gets set to true once we receive a getbiginv message from our peer. An abusive peer might request it too much so we use this variable to check whether they have already asked for a big inv message.
+// self.receivedgetbiginv = False #Gets set to true once we receive a
+// getbiginv message from our peer. An abusive peer might request it too much
+// so we use this variable to check whether they have already asked for a big
+// inv message.
 
 // #Only one singleListener thread will ever exist. It creates the
 // #receiveDataThread and sendDataThread for each incoming connection. Note

@@ -44,9 +44,8 @@ func writeMessage(w io.Writer, command string, payload []byte) {
 	putBytes(buf, []byte(nullPadCommand(command)))
 	// Length of payload in number of bytes
 	putUint32(buf, uint32(len(payload)))
-	// First 4 bytes of sha512(payload). 
-	// This should be a uint32, but they are the same on the wire.
-	putBytes(buf, sha512HashPrefix(payload))
+	// First 4 bytes of sha512(payload).
+	putUint32(buf, sha512HashPrefix(payload))
 	// The actual data, a message or an object
 	putBytes(buf, payload)
 
