@@ -21,6 +21,7 @@ import (
 // Magic value indicating message origin network, and used to seek to next
 // message when stream state is unknown.
 var MagicHeader = uint32(0xE9BEB4D9)
+var MagicHeaderSlice = []byte{0xE9, 0xBE, 0xB4, 0xD9}
 
 const protocolVersion = 1
 
@@ -66,7 +67,6 @@ func writeNetworkAddress(w io.Writer, addr *net.TCPAddr) (err error) {
 	if addr == nil {
 		// Data refers to this node. Fill the IP address with a loopback address, but set
 		// a meaningful TCP port.
-		log.Println("self")
 		putBytes(buf, net.IPv6loopback)
 		putUint16(buf, portNumber)
 		_, err = w.Write(buf.Bytes())
@@ -330,6 +330,38 @@ func putUint64(w io.Writer, u uint64) {
 	check(binary.Write(w, binary.BigEndian, u))
 }
 
+func readBytes(r io.Reader) (b []byte) {
+	check(binary.Read(r, binary.BigEndian, b))
+	return b
+}
+
+func readInt32(r io.Reader) (x int32) {
+	check(binary.Read(r, binary.BigEndian, &x))
+	return x
+}
+
+func readUint32(r io.Reader) (x uint32) {
+	check(binary.Read(r, binary.BigEndian, &x))
+	return x
+}
+
+/*
+func readInt64(r io.Reader, i int64) {
+	check(binary.Write(w, binary.BigEndian, i))
+}
+
+func readUint16(r io.Reader, u uint16) {
+	check(binary.Write(w, binary.BigEndian, u))
+}
+
+func readUint32(r io.Reader, u uint32) {
+	check(binary.Write(w, binary.BigEndian, u))
+}
+
+func readUint64(r io.Reader, u uint64) {
+	check(binary.Write(w, binary.BigEndian, u))
+}
+*/
 func ProofOfWork(msg []byte) ([]byte, error) {
 	for i := 0; i < 2; i++ {
 		h := sha512.New()
