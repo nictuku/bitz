@@ -12,12 +12,15 @@ import (
 )
 
 type Node struct {
-	cfg        *Config
-	knownNodes streamNodes
+	// All members can only be accessed by the main server routine inside
+	// Run().
+	cfg *Config
 	// Stats. All access must be synchronized because it's often used by other
 	// goroutines (UI).
 	stats stats
 	resp  responses
+	// knownNodes are all nodes we know of for each stream number.
+	knownNodes streamNodes
 }
 
 type responses struct {
@@ -34,14 +37,21 @@ func (n *Node) Run() {
 	log.Println("Listening at", listener.Addr())
 	n.resp = responses{make(chan []extendedNetworkAddress)}
 	go listen(listener.(*net.TCPListener), n.resp)
-	go n.bootstrap()
+	n.bootstrap()
 
+	saveTick := time.Tick(time.Second * 1)
 	for {
 		select {
 		case addrs := <-n.resp.nodesChan:
 			log.Printf("nodesChan, got: %d nodes", len(addrs))
+			for _, addr := range addrs {
+				ip := parseIP(addr.IP)
+				node := remoteNode{lastContacted: time.Now()}
+				n.addNode(streamOne, ipPort(fmt.Sprintf("%v:%d", ip.String(), addr.Port)), node)
+			}
+		case <-saveTick:
+			n.cfg.save(n.knownNodes)
 		}
-
 	}
 }
 
@@ -85,13 +95,13 @@ func handleConn(conn *net.TCPConn, resp responses) {
 			err = handleVersion(conn, p, payload)
 		case "addr":
 			err = handleAddr(conn, p, payload, resp.nodesChan)
-
 		case "verack":
 			err = handleVerack(conn, p)
 		default:
-			log.Println("ignoring unknown command %q", command)
+			log.Printf("ignoring unknown command %q", command)
 		}
 		if err != nil {
+			// Disconnects from node.
 			return
 		}
 	}
@@ -104,6 +114,11 @@ func handleVersion(conn io.Writer, p *peerState, payload io.Reader) error {
 	version, err := parseVersion(payload)
 	if err != nil {
 		return fmt.Errorf("parseVersion: %v", err)
+	}
+	if version.Nonce == nonce {
+		// Close connection to self.
+		// TODO: put on ipPort blacklist.
+		return fmt.Errorf("closing loop")
 	}
 	if version.Version != protocolVersion {
 		return fmt.Errorf("protocol version not supported: got %d, wanted %d.Closing the connection", version.Version, protocolVersion)
@@ -144,6 +159,10 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 }
 
 // Things needing implementation.
+//
+// - save the config frequently.
+//
+// from PyBitMessage:
 //
 // broadcastToSendDataQueues((0, 'shutdown', self.HOST))
 //

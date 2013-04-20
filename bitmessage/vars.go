@@ -11,7 +11,7 @@ import (
 
 const (
 	protocolVersion = 1
-
+	streamOne       = 1
 	// Using same value from PyBitmessage, which was originally added to avoid memory blowups.
 	// The protocol itself doesn't restrict it. This should certainly be removed
 	maxPayloadLength = 180000000
@@ -62,7 +62,7 @@ func init() {
 	userAgent = buf.Bytes()
 
 	buf = new(bytes.Buffer)
-	putVarIntList(buf, []uint64{1})
+	putVarIntList(buf, []uint64{streamOne})
 	streamNumbers = buf.Bytes()
 
 	// TODO: rotate the nonce numbers.

@@ -19,16 +19,25 @@ type Config struct {
 	sync.RWMutex
 	Port int
 
-	path string // Empty if the store is disabled.
+	path  string // Empty if the store is disabled.
+	Nodes []ipPort
 }
 
 // saveConfig tries to safe the provided config in a safe way.
-func (s *Config) save() {
+func (s *Config) save(knownNodes streamNodes) {
 	s.Lock()
 	defer s.Unlock()
 	if s.path == "" {
+		log.Println("skipping save, empty path")
 		return
 	}
+	s.Nodes = make([]ipPort, 0, 10)
+	for _, nodes := range knownNodes {
+		for addr, _ := range nodes {
+			s.Nodes = append(s.Nodes, addr)
+		}
+	}
+
 	tmp, err := ioutil.TempFile(s.path, id)
 	if err != nil {
 		log.Println("saveConfig tempfile:", err)
@@ -47,28 +56,25 @@ func (s *Config) save() {
 	// not on Windows.
 	p := fmt.Sprintf("%v-%v", path.Join(s.path, prefix), s.Port)
 	if err := os.Rename(tmp.Name(), p); err != nil {
-		if os.IsExist(err) {
-			// It's not possible to atomically rename files on Windows, so I
-			// have to delete it and try again. If the program crashes between
-			// the unlink and the rename operation, the config should be
-			// available in the temp path.
+		// Doesn't work on Windows:
+		// if os.IsExist(err) {
+		// It's not possible to atomically rename files on Windows, so I
+		// have to delete it and try again. If the program crashes between
+		// the unlink and the rename operation, the config should be
+		// available in the temp path.
 
-			// TODO: Use a static temp path and always try to recover from it
-			// during openConfig().
-			if err := os.Remove(p); err != nil {
-				log.Println("saveConfig failed to remove the existing config:", err)
-				return
-			}
-			if err := os.Rename(tmp.Name(), p); err != nil {
-				log.Println("saveConfig failed to rename file after deleting the original config:", err)
-				return
-			}
-		} else {
-			log.Println("saveConfig failed when replacing existing config:", err)
+		// TODO: Use a static temp path and always try to recover from it
+		// during openConfig().
+		if err := os.Remove(p); err != nil {
+			log.Println("saveConfig failed to remove the existing config:", err)
+			return
 		}
-	} else {
-		log.Println("Saved DHT routing table to the filesystem.")
+		if err := os.Rename(tmp.Name(), p); err != nil {
+			log.Println("saveConfig failed to rename file after deleting the original config:", err)
+			return
+		}
 	}
+	log.Printf("Saved bitz state to the filesystem at %v.", p)
 }
 
 // mkdirConfig() creates a directory to load and save the configuration from.

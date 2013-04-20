@@ -379,23 +379,6 @@ func readNetworkAddressList(r io.Reader) ([]extendedNetworkAddress, error) {
 	return addrs, nil
 }
 
-/*
-func readInt64(r io.Reader, i int64) {
-	check(binary.Write(w, binary.BigEndian, i))
-}
-
-func readUint16(r io.Reader, u uint16) {
-	check(binary.Write(w, binary.BigEndian, u))
-}
-
-func readUint32(r io.Reader, u uint32) {
-	check(binary.Write(w, binary.BigEndian, u))
-}
-
-func readUint64(r io.Reader, u uint64) {
-	check(binary.Write(w, binary.BigEndian, u))
-}
-*/
 func ProofOfWork(msg []byte) ([]byte, error) {
 	for i := 0; i < 2; i++ {
 		h := sha512.New()

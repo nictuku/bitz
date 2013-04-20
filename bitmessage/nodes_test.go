@@ -10,6 +10,6 @@ func TestFindBootstrapNodes(t *testing.T) {
 		t.Fatal("findBootstrapNodes returned an empty set")
 	}
 	for i, n := range nodes {
-		t.Logf("bootstrap node #%d: %v", i, n.String())
+		t.Logf("bootstrap node #%d: %v", i, n)
 	}
 }
