@@ -2,8 +2,11 @@ package bitmessage
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
+
+	encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
 
 type parserState struct {
@@ -101,4 +104,16 @@ func parseCommand(r io.Reader) (command string, err error) {
 	}
 	cmd = bytes.TrimRight(cmd, "\x00")
 	return string(cmd), nil
+}
+
+func parseVersion(r io.Reader) (versionMessage, error) {
+	v := &binaryVersionMessage{}
+	check(binary.Read(r, binary.BigEndian, v))
+	fmt.Println("version", v.Version)
+	fmt.Println("addr recv", parseIP(v.AddrRecv.IP))
+
+	userAgent, _, _ := encVarstring.ReadVarString(r)
+	streams := readVarIntList(r)
+	version := versionMessage{*v, userAgent, streams}
+	return version, nil
 }

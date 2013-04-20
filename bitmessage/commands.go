@@ -9,7 +9,6 @@ import (
 	"net"
 	"time"
 
-	encVarint "github.com/spearson78/guardian/encoding/varint"
 	encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
 
@@ -23,16 +22,7 @@ func init() {
 	userAgent = buf.Bytes()
 
 	buf = new(bytes.Buffer)
-	streams := []int{1}
-	if _, err := encVarint.WriteVarInt(buf, uint64(len(streams))); err != nil {
-		log.Fatalln("streams length.", err.Error())
-
-	}
-	for _, v := range streams {
-		if _, err := encVarint.WriteVarInt(buf, uint64(v)); err != nil {
-			log.Fatalln("streams.", err.Error())
-		}
-	}
+	putVarIntList(buf, []uint64{1})
 	streamNumbers = buf.Bytes()
 
 	err := binary.Read(rand.Reader, binary.LittleEndian, &nonce)
@@ -81,4 +71,10 @@ func writeVersion(w io.Writer, dest *net.TCPAddr) {
 	putBytes(buf, streamNumbers)
 
 	writeMessage(w, "version", buf.Bytes())
+}
+
+// The verack message is sent in reply to version. This message consists of
+// only a message header with the command string "verack".
+func writeVerack(w io.Writer) {
+	writeMessage(w, "verack", []byte{})
 }

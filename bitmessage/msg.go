@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"code.google.com/p/go.crypto/ripemd160"
+	encVarint "github.com/spearson78/guardian/encoding/varint"
 )
 
 // Magic value indicating message origin network, and used to seek to next
@@ -76,12 +77,16 @@ type NetworkAddress struct {
 	// XXX not needed.
 	//time     uint32 // the time
 	//stream   uint32 // Stream number for this node
-	services uint64 // Same service(s) listed in version
+	Services uint64 // Same service(s) listed in version
 
 	// IPv6 Address, or IPv6-mapped IPv4 address:
 	//00 00 00 00 00 00 00 00 00 00 FF FF, followed by the IPv4 bytes.
-	ip   [16]byte
-	port uint16 // portNumber.
+	IP   [16]byte
+	Port uint16 // portNumber.
+}
+
+func parseIP(ip [16]byte) net.IP {
+	return net.IP(ip[0:len(ip)])
 }
 
 // InventoryVectors are used for notifying other nodes about objects they
@@ -161,10 +166,9 @@ const (
 	pubKeyDoesAck = 31
 )
 
-// When a node creates an outgoing connection, it will immediately advertise
-// its version. The remote node will respond with its version. No futher
-// communication is possible until both peers have exchanged their version.
-type offVersionMessage struct {
+// binaryVersionMessage is the initial section of a Version message that can be
+// decoded directly by the encoding/binary package functions.
+type binaryVersionMessage struct {
 	// Identifies protocol version being used by the node.
 	Version int32
 	// bitfield of features to be enabled for this connection.
@@ -179,10 +183,18 @@ type offVersionMessage struct {
 	AddrFrom NetworkAddress
 	// Random nonce used to detect connections to self.
 	Nonce uint64
-	// User Agent (0x00 if string is 0 bytes long)
-	UserAgent varstring
-	// The stream numbers that the emitting node is interested in.
-	StreamNumbers []byte
+	// Extra fields that can't be parsed by the binary reader:
+	// varstring: User Agent (0x00 if string is 0 bytes long)
+	// list of varint: The stream numbers that the emitting node is interested in.
+}
+
+// When a node creates an outgoing connection, it will immediately advertise
+// its version. The remote node will respond with its version. No futher
+// communication is possible until both peers have exchanged their version.
+type versionMessage struct {
+	binaryVersionMessage
+	userAgent     string
+	streamNumbers []uint64
 }
 
 const (
@@ -192,7 +204,7 @@ const (
 
 // The VerackMessage is sent in reply to version. This message consists of
 // only a message header with the command string "verack".
-type VerackMessage struct {
+type OffVerackMessage struct {
 	// msg Message // Contains only a header with the command string "verack"
 }
 
@@ -324,6 +336,18 @@ func putUint64(w io.Writer, u uint64) {
 	check(binary.Write(w, binary.BigEndian, u))
 }
 
+func putVarIntList(w io.Writer, x []uint64) {
+	if _, err := encVarint.WriteVarInt(w, uint64(len(x))); err != nil {
+		log.Println("putVarIntList lenght:", err.Error())
+
+	}
+	for _, v := range x {
+		if _, err := encVarint.WriteVarInt(w, uint64(v)); err != nil {
+			log.Println("putVarIntList:", err.Error())
+		}
+	}
+}
+
 func readBytes(r io.Reader) (b []byte) {
 	check(binary.Read(r, binary.BigEndian, b))
 	return b
@@ -336,6 +360,22 @@ func readInt32(r io.Reader) (x int32) {
 
 func readUint32(r io.Reader) (x uint32) {
 	check(binary.Read(r, binary.BigEndian, &x))
+	return x
+}
+
+func readVarIntList(r io.Reader) []uint64 {
+	length, _, err := encVarint.ReadVarInt(r)
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+	x := make([]uint64, length)
+	for i := range x {
+		if x[i], _, err = encVarint.ReadVarInt(r); err != nil {
+			log.Println(err)
+			return nil
+		}
+	}
 	return x
 }
 

@@ -3,6 +3,7 @@ package bitmessage
 // This file implements the main engine for this BitMessage node.
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -36,7 +37,7 @@ func (n *Node) Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("listener att", listener.Addr())
+	log.Println("Listening at", listener.Addr())
 	n.recvChan = make(chan packet)
 	go listen(listener.(*net.TCPListener), n.recvChan)
 	n.boot()
@@ -67,14 +68,35 @@ func listen(listener *net.TCPListener, recvChan chan packet) {
 	}
 }
 
+type peerState struct {
+	versionMatch bool
+}
+
 func handleConn(conn *net.TCPConn, recvChan chan packet) {
 	defer conn.Close()
-	conn.SetReadDeadline(time.Now().Add(time.Second * 30))
-	command, _, err := readMessage(conn)
-	if err != nil {
-		log.Fatal(err)
+
+	p := peerState{}
+	for {
+		conn.SetReadDeadline(time.Now().Add(time.Second * 30))
+		command, payload, err := readMessage(conn)
+		if err != nil {
+			log.Println("handleConn:", err)
+			return
+		}
+		log.Printf("got command: %v", command)
+		switch command {
+		case "version":
+			if p.versionMatch {
+				log.Println("received a 'version' message from a host we already went through a version exchange. Closing the connection.")
+				return
+			}
+
+			// XXX move readmessage to return a reader?
+			version, err := parseVersion(bytes.NewBuffer(payload))
+			fmt.Println("doing something with", version, err)
+		}
 	}
-	log.Println("got command: %v", command)
+	// XXX send something to recvChan.
 }
 
 // Things needing implementation.
