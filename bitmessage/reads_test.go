@@ -48,7 +48,10 @@ func TestReadMessages(t *testing.T) {
 		x.Write(tt.raw)
 		cmd, payload, err := readMessage(x)
 		if err != nil && err.Error() != tt.err.Error() {
-			t.Errorf("err wanted:\n%q\n	got:\n%q\n (test %d)", tt.err, err, i)
+			t.Fatalf("err wanted:\n%q\n	got:\n%q\n (test %d)", tt.err, err, i)
+		}
+		if err != nil {
+			break
 		}
 		if cmd != tt.command {
 			t.Errorf("version wanted %q got %q (test %d)", tt.command, cmd, i)
