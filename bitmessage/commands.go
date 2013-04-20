@@ -78,3 +78,7 @@ func writeVersion(w io.Writer, dest *net.TCPAddr) {
 func writeVerack(w io.Writer) {
 	writeMessage(w, "verack", []byte{})
 }
+
+// Provide information on known nodes of the network. Non-advertised nodes
+// should be forgotten after typically 3 hours.
+// func writeAddr

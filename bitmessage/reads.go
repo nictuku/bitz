@@ -116,3 +116,7 @@ func parseVersion(r io.Reader) (versionMessage, error) {
 	version := versionMessage{*v, userAgent, streams}
 	return version, nil
 }
+
+func parseAddr(r io.Reader) ([]NetworkAddress, error) {
+	return readNetworkAddressList(r)
+}

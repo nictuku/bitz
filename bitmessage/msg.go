@@ -202,19 +202,6 @@ const (
 	ConnectionServiceNodeNetwork = 1
 )
 
-// The VerackMessage is sent in reply to version. This message consists of
-// only a message header with the command string "verack".
-type OffVerackMessage struct {
-	// msg Message // Contains only a header with the command string "verack"
-}
-
-// Provide information on known nodes of the network. Non-advertised nodes
-// should be forgotten after typically 3 hours.
-type AddrMessage struct {
-	count    varint           // Number of address entries (max: 1000)
-	addrList []NetworkAddress // Address of other nodes on the network.
-}
-
 // InvMessage allows a node to advertise its knowledge of one or more objects.
 // It can be received unsolicited, or in reply to getmessages.
 // Maximum payload length: 50000 items.
@@ -363,6 +350,7 @@ func readUint32(r io.Reader) (x uint32) {
 	return x
 }
 
+// XXX return errors too
 func readVarIntList(r io.Reader) []uint64 {
 	length, _, err := encVarint.ReadVarInt(r)
 	if err != nil {
@@ -377,6 +365,22 @@ func readVarIntList(r io.Reader) []uint64 {
 		}
 	}
 	return x
+}
+
+func readNetworkAddressList(r io.Reader) ([]NetworkAddress, error) {
+	length, _, err := encVarint.ReadVarInt(r)
+	if err != nil {
+		return nil, err
+	}
+	addrs := make([]NetworkAddress, length)
+	for i := range addrs {
+		addr := NetworkAddress{}
+		if err := binary.Read(r, binary.BigEndian, &addr); err != nil {
+			return nil, err
+		}
+		addrs[i] = addr
+	}
+	return addrs, nil
 }
 
 /*

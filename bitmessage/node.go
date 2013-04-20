@@ -4,6 +4,7 @@ package bitmessage
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -74,7 +75,7 @@ type peerState struct {
 func handleConn(conn *net.TCPConn, recvChan chan packet) {
 	defer conn.Close()
 
-	p := peerState{}
+	p := &peerState{}
 	for {
 		conn.SetReadDeadline(time.Now().Add(time.Second * 30))
 		command, payload, err := readMessage(conn)
@@ -85,24 +86,46 @@ func handleConn(conn *net.TCPConn, recvChan chan packet) {
 		log.Printf("got command: %v", command)
 		switch command {
 		case "version":
-			if p.versionMatch {
-				log.Println("received a 'version' message from a host we already went through a version exchange. Closing the connection.")
-				return
-			}
-			version, err := parseVersion(payload)
-			if err != nil {
-				log.Println("parseVersion:", err)
-				return
-			}
-			if version.Version != protocolVersion {
-				log.Printf("protocol version not supported: got %d, wanted %d.Closing the connection", version.Version, protocolVersion)
-				return
-			}
-			p.versionMatch = true
-			writeVerack(conn)
+			handleVersion(conn, p, payload)
+		case "addr":
+			handleAddr(conn, p, payload)
 		}
 	}
 	// XXX send something to recvChan.
+}
+
+func handleVersion(conn *net.TCPConn, p *peerState, payload io.Reader) {
+	if p.versionMatch {
+		log.Println("received a 'version' message from a host we already went through a version exchange. Closing the connection.")
+		return
+	}
+	version, err := parseVersion(payload)
+	if err != nil {
+		log.Println("parseVersion:", err)
+		return
+	}
+	if version.Version != protocolVersion {
+		log.Printf("protocol version not supported: got %d, wanted %d.Closing the connection", version.Version, protocolVersion)
+		return
+	}
+	p.versionMatch = true
+	writeVerack(conn)
+}
+
+func handleAddr(conn *net.TCPConn, p *peerState, payload io.Reader) {
+	if !p.versionMatch {
+		log.Println("version unknown. Closing connection")
+		return
+	}
+	addrs, err := parseAddr(conn)
+	if err != nil {
+		log.Printf("parseAddr error: %v. Closing connection", err)
+		return
+	}
+	for _, addr := range addrs {
+		log.Println("do something with addr", addr)
+
+	}
 }
 
 // Things needing implementation.
