@@ -31,11 +31,6 @@ func writeMessage(w io.Writer, command string, payload []byte) {
 	// TODO performance: pre-allocate byte slices, share between instances.
 	buf := new(bytes.Buffer)
 
-	if len(payload) == 0 {
-		log.Println("skipping writeMessage with empty payload")
-		return
-	}
-
 	// Magic value indicating message origin network, and used to seek to
 	// next message when stream state is unknown.
 	putUint32(buf, MagicHeader)
