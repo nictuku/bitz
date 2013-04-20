@@ -28,7 +28,7 @@ func (n *Node) bootstrap() {
 
 	// Current bitmessage clients only connect to stream 1.
 	nodes := n.knownNodes[1]
-	handshake(nodes, n.recvChan)
+	handshake(nodes, n.resp)
 }
 
 // findBootStrapNodes uses DNS resolution for finding bootstrap nodes for the
@@ -52,7 +52,7 @@ func findBootstrapNodes() (nodes []net.TCPAddr) {
 	return nodes
 }
 
-func handshake(nodes nodeMap, recvChan chan packet) {
+func handshake(nodes nodeMap, resp responses) {
 	for ipPort, node := range nodes {
 		if !node.lastContacted.IsZero() && time.Since(node.lastContacted) < nodeConnectionRetryPeriod {
 			// This node was contacted recently, so wait before the next try.
@@ -65,7 +65,7 @@ func handshake(nodes nodeMap, recvChan chan packet) {
 				log.Printf("error connecting to node %v: %v", ipPort, err)
 				continue
 			}
-			go handleConn(node.conn.(*net.TCPConn), recvChan)
+			go handleConn(node.conn.(*net.TCPConn), resp)
 		}
 		dest := node.conn.RemoteAddr().(*net.TCPAddr)
 		go writeVersion(node.conn, dest)

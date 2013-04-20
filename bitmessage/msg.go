@@ -64,15 +64,20 @@ func writeNetworkAddress(w io.Writer, addr *net.TCPAddr) (err error) {
 }
 
 type NetworkAddress struct {
-	// XXX not needed.
-	//time     uint32 // the time
-	//stream   uint32 // Stream number for this node
 	Services uint64 // Same service(s) listed in version
 
 	// IPv6 Address, or IPv6-mapped IPv4 address:
 	//00 00 00 00 00 00 00 00 00 00 FF FF, followed by the IPv4 bytes.
 	IP   [16]byte
 	Port uint16 // portNumber.
+}
+
+type extendedNetworkAddress struct {
+	// Last received message from this node.
+	Time uint32
+	// Stream number for this node.
+	Stream uint32
+	NetworkAddress
 }
 
 func parseIP(ip [16]byte) net.IP {
@@ -357,14 +362,15 @@ func readVarIntList(r io.Reader) []uint64 {
 	return x
 }
 
-func readNetworkAddressList(r io.Reader) ([]NetworkAddress, error) {
+func readNetworkAddressList(r io.Reader) ([]extendedNetworkAddress, error) {
 	length, _, err := encVarint.ReadVarInt(r)
 	if err != nil {
 		return nil, err
 	}
-	addrs := make([]NetworkAddress, length)
+	log.Println("entries", length)
+	addrs := make([]extendedNetworkAddress, length)
 	for i := range addrs {
-		addr := NetworkAddress{}
+		addr := extendedNetworkAddress{}
 		if err := binary.Read(r, binary.BigEndian, &addr); err != nil {
 			return nil, err
 		}

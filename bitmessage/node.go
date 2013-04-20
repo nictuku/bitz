@@ -16,8 +16,12 @@ type Node struct {
 	knownNodes streamNodes
 	// Stats. All access must be synchronized because it's often used by other
 	// goroutines (UI).
-	stats    stats
-	recvChan chan packet
+	stats stats
+	resp  responses
+}
+
+type responses struct {
+	nodesChan chan []extendedNetworkAddress
 }
 
 func (n *Node) Run() {
@@ -28,14 +32,14 @@ func (n *Node) Run() {
 		log.Fatal(err)
 	}
 	log.Println("Listening at", listener.Addr())
-	n.recvChan = make(chan packet)
-	go listen(listener.(*net.TCPListener), n.recvChan)
-	n.bootstrap()
+	n.resp = responses{make(chan []extendedNetworkAddress)}
+	go listen(listener.(*net.TCPListener), n.resp)
+	go n.bootstrap()
 
 	for {
 		select {
-		case p := <-n.recvChan:
-			fmt.Println("recvChan from %v, got: %q", p.raddr, p.b)
+		case addrs := <-n.resp.nodesChan:
+			log.Printf("nodesChan, got: %d nodes", len(addrs))
 		}
 
 	}
@@ -47,22 +51,24 @@ type packet struct {
 }
 
 // Read from TCP , writes slice of byte into channel.
-func listen(listener *net.TCPListener, recvChan chan packet) {
+func listen(listener *net.TCPListener, resp responses) {
 	for {
 		conn, err := listener.AcceptTCP()
 		if err != nil {
 			log.Fatal("Can't listen to network port:", err)
 			return
 		}
-		go handleConn(conn, recvChan)
+		go handleConn(conn, resp)
 	}
 }
 
 type peerState struct {
-	versionMatch bool
+	established    bool // when 'verack' has been sent and received.
+	verackSent     bool
+	verackReceived bool
 }
 
-func handleConn(conn *net.TCPConn, recvChan chan packet) {
+func handleConn(conn *net.TCPConn, resp responses) {
 	defer conn.Close()
 
 	p := &peerState{}
@@ -76,45 +82,65 @@ func handleConn(conn *net.TCPConn, recvChan chan packet) {
 		log.Printf("got command: %v", command)
 		switch command {
 		case "version":
-			handleVersion(conn, p, payload)
+			err = handleVersion(conn, p, payload)
 		case "addr":
-			handleAddr(conn, p, payload)
+			err = handleAddr(conn, p, payload, resp.nodesChan)
+
+		case "verack":
+			err = handleVerack(conn, p)
+		default:
+			log.Println("ignoring unknown command %q", command)
+		}
+		if err != nil {
+			return
 		}
 	}
-	// XXX send something to recvChan.
 }
 
-func handleVersion(conn *net.TCPConn, p *peerState, payload io.Reader) {
-	if p.versionMatch {
-		log.Println("received a 'version' message from a host we already went through a version exchange. Closing the connection.")
-		return
+func handleVersion(conn io.Writer, p *peerState, payload io.Reader) error {
+	if p.established {
+		return fmt.Errorf("received a 'version' message from a host we already went through a version exchange. Closing the connection.")
 	}
 	version, err := parseVersion(payload)
 	if err != nil {
-		log.Println("parseVersion:", err)
-		return
+		return fmt.Errorf("parseVersion: %v", err)
 	}
 	if version.Version != protocolVersion {
-		log.Printf("protocol version not supported: got %d, wanted %d.Closing the connection", version.Version, protocolVersion)
-		return
+		return fmt.Errorf("protocol version not supported: got %d, wanted %d.Closing the connection", version.Version, protocolVersion)
 	}
-	p.versionMatch = true
-	writeVerack(conn)
+	if p.verackSent == false {
+		writeVerack(conn)
+	}
+	p.verackSent = true
+	if p.verackReceived {
+		p.established = true
+	}
+	return nil
 }
 
-func handleAddr(conn *net.TCPConn, p *peerState, payload io.Reader) {
-	if !p.versionMatch {
-		log.Println("version unknown. Closing connection")
-		return
+func handleVerack(conn io.Writer, p *peerState) error {
+	if p.verackReceived {
+		return fmt.Errorf("received 'verack' twice from a node. Closing connection")
 	}
-	addrs, err := parseAddr(conn)
+	p.verackReceived = true
+	if p.verackSent {
+		p.established = true
+	}
+	return nil
+}
+
+func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan []extendedNetworkAddress) error {
+	if !p.established {
+		return fmt.Errorf("version unknown. Closing connection")
+	}
+	addrs, err := parseAddr(payload)
 	if err != nil {
-		log.Printf("parseAddr error: %v. Closing connection", err)
-		return
+		return fmt.Errorf("parseAddr error: %v. Closing connection", err)
 	}
-	for _, addr := range addrs {
-		log.Println("do something with addr", addr)
-	}
+	log.Println("respNodes starting")
+	respNodes <- addrs
+	log.Println("respNodes done")
+	return nil
 }
 
 // Things needing implementation.
