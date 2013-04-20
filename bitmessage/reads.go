@@ -21,7 +21,7 @@ type parserState struct {
 // outputs the name of the command in the message, plus the payload content.
 // It verifies that the content matches the checksum in the message header and
 // throws an error otherwise.
-func readMessage(r io.Reader) (command string, payload []byte, err error) {
+func readMessage(r io.Reader) (command string, buf io.Reader, err error) {
 	b := make([]byte, 512)
 	p := parserState{}
 
@@ -78,11 +78,10 @@ func readMessage(r io.Reader) (command string, payload []byte, err error) {
 	if data.Len() != p.payloadLength {
 		return p.command, nil, fmt.Errorf("readMessage: stream ended before we could get the payload data, wanted length %d, got %d", p.payloadLength, data.Len())
 	}
-	payload = data.Bytes()
-	if checksum := sha512HashPrefix(payload); p.checksum != checksum {
+	if checksum := sha512HashPrefix(data.Bytes()); p.checksum != checksum {
 		return p.command, nil, fmt.Errorf("readMessage: checksum mismatch: message advertised %x, calculated %x", p.checksum, checksum)
 	}
-	return p.command, payload, nil
+	return p.command, data, nil
 }
 
 func parseHeaderFields(p *parserState, data io.Reader) (err error) {

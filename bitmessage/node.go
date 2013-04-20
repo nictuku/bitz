@@ -3,7 +3,6 @@ package bitmessage
 // This file implements the main engine for this BitMessage node.
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -90,9 +89,7 @@ func handleConn(conn *net.TCPConn, recvChan chan packet) {
 				log.Println("received a 'version' message from a host we already went through a version exchange. Closing the connection.")
 				return
 			}
-
-			// XXX move readmessage to return a reader?
-			version, err := parseVersion(bytes.NewBuffer(payload))
+			version, err := parseVersion(payload)
 			if err != nil {
 				log.Println("parseVersion:", err)
 				return

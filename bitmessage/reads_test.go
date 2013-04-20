@@ -3,6 +3,7 @@ package bitmessage
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"testing"
 )
 
@@ -52,7 +53,8 @@ func TestReadMessages(t *testing.T) {
 		if cmd != tt.command {
 			t.Errorf("version wanted %q got %q (test %d)", tt.command, cmd, i)
 		}
-		if !bytes.Equal(payload, tt.payload) {
+		buf, _ := ioutil.ReadAll(payload)
+		if !bytes.Equal(buf, tt.payload) {
 			t.Errorf("payload wanted %q got %q (test %d)", tt.payload, payload, i)
 		}
 	}
@@ -72,7 +74,8 @@ func TestWriteAndRead(t *testing.T) {
 		if cmd != tt.command {
 			t.Errorf("version wanted %q got %q (test %d)", tt.command, cmd, i)
 		}
-		if !bytes.Equal(payload, tt.payload) {
+		buf, _ := ioutil.ReadAll(payload)
+		if !bytes.Equal(buf, tt.payload) {
 			t.Errorf("payload wanted %q got %q (test %d)", tt.payload, payload, i)
 		}
 	}
