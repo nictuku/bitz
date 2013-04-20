@@ -93,11 +93,16 @@ func handleConn(conn *net.TCPConn, recvChan chan packet) {
 
 			// XXX move readmessage to return a reader?
 			version, err := parseVersion(bytes.NewBuffer(payload))
+			if err != nil {
+				log.Println("parseVersion:", err)
+				return
+			}
 			if version.Version != protocolVersion {
 				log.Printf("protocol version not supported: got %d, wanted %d.Closing the connection", version.Version, protocolVersion)
 				return
 			}
-			fmt.Println("doing something with", version, err)
+			p.versionMatch = true
+			writeVerack(conn)
 		}
 	}
 	// XXX send something to recvChan.
