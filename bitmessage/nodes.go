@@ -35,6 +35,7 @@ func (n *Node) delNode(stream int, ipPort ipPort) {
 		n.knownNodes[stream] = make(nodeMap)
 	}
 	delete(n.knownNodes[stream], ipPort)
+	log.Println("deleted node", ipPort, "from stream", stream)
 }
 
 func (n *Node) bootstrap() {
@@ -82,20 +83,8 @@ func handshake(ipPort ipPort, node remoteNode, resp responses) {
 			log.Printf("error connecting to node %v: %v", ipPort, err)
 			return
 		}
-		// TODO: move to a "ipPort to extendedNetworkAddress" function.
+
 		tcpConn := node.conn.(*net.TCPConn)
-		tcpAddr, err := net.ResolveTCPAddr("tcp", string(ipPort))
-		var rawIp [16]byte
-		copy(rawIp[:], tcpAddr.IP)
-		resp.nodesChan <- []extendedNetworkAddress{{
-			Time:   uint32(time.Now().Unix()),
-			Stream: streamOne, // This should change after the version exchange.
-			NetworkAddress: NetworkAddress{
-				Services: ConnectionServiceNodeNetwork, //
-				IP:       rawIp,
-				Port:     uint16(tcpAddr.Port),
-			}},
-		}
 		go handleConn(tcpConn, resp)
 	}
 	dest := node.conn.RemoteAddr().(*net.TCPAddr)

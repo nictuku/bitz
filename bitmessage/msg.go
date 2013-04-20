@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"crypto/sha512"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -70,6 +71,11 @@ type NetworkAddress struct {
 	//00 00 00 00 00 00 00 00 00 00 FF FF, followed by the IPv4 bytes.
 	IP   [16]byte
 	Port uint16 // portNumber.
+}
+
+func (addr NetworkAddress) ipPort() ipPort {
+	ip := parseIP(addr.IP)
+	return ipPort(fmt.Sprintf("%v:%d", ip.String(), addr.Port))
 }
 
 type extendedNetworkAddress struct {

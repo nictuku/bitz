@@ -24,7 +24,9 @@ type Node struct {
 }
 
 type responses struct {
-	nodesChan chan []extendedNetworkAddress
+	addrsChan   chan []extendedNetworkAddress
+	addNodeChan chan extendedNetworkAddress
+	delNodeChan chan extendedNetworkAddress
 }
 
 func (n *Node) Run() {
@@ -35,20 +37,29 @@ func (n *Node) Run() {
 		log.Fatal(err)
 	}
 	log.Println("Listening at", listener.Addr())
-	n.resp = responses{make(chan []extendedNetworkAddress)}
+	n.resp = responses{
+		make(chan []extendedNetworkAddress),
+		make(chan extendedNetworkAddress),
+		make(chan extendedNetworkAddress),
+	}
 	go listen(listener.(*net.TCPListener), n.resp)
 	n.bootstrap()
-
+	// TODO: do this less frequently.
+	// TODO: add signal handler for saving on exit.
 	saveTick := time.Tick(time.Second * 1)
 	for {
 		select {
-		case addrs := <-n.resp.nodesChan:
+		case addrs := <-n.resp.addrsChan:
 			log.Printf("nodesChan, got: %d nodes", len(addrs))
 			for _, addr := range addrs {
-				ip := parseIP(addr.IP)
-				node := remoteNode{lastContacted: time.Now()}
-				n.addNode(streamOne, ipPort(fmt.Sprintf("%v:%d", ip.String(), addr.Port)), node)
+				node := remoteNode{}
+				go handshake(addr.ipPort(), node, n.resp)
 			}
+		case addr := <-n.resp.addNodeChan:
+			node := remoteNode{lastContacted: time.Now()}
+			n.addNode(int(addr.Stream), addr.ipPort(), node)
+		case addr := <-n.resp.delNodeChan:
+			n.delNode(int(addr.Stream), addr.ipPort())
 		case <-saveTick:
 			n.cfg.save(n.knownNodes)
 		}
@@ -76,38 +87,43 @@ type peerState struct {
 	established    bool // when 'verack' has been sent and received.
 	verackSent     bool
 	verackReceived bool
+	ipPort         ipPort
 }
 
 func handleConn(conn *net.TCPConn, resp responses) {
 	defer conn.Close()
 
 	p := &peerState{}
+	p.ipPort = ipPort(conn.RemoteAddr().String())
 	for {
+
 		conn.SetReadDeadline(time.Now().Add(connectionTimeout))
 		command, payload, err := readMessage(conn)
 		if err != nil {
 			log.Println("handleConn:", err)
+			resp.delNodeChan <- p.ipPort.toNetworkAddress()
 			return
 		}
 		log.Printf("got command: %v", command)
 		switch command {
 		case "version":
-			err = handleVersion(conn, p, payload)
+			err = handleVersion(conn, p, payload, resp.addNodeChan)
 		case "addr":
-			err = handleAddr(conn, p, payload, resp.nodesChan)
+			err = handleAddr(conn, p, payload, resp.addrsChan)
 		case "verack":
-			err = handleVerack(conn, p)
+			err = handleVerack(conn, p, resp.addNodeChan)
 		default:
 			log.Printf("ignoring unknown command %q", command)
 		}
 		if err != nil {
+			resp.delNodeChan <- ipPort(conn.RemoteAddr().String()).toNetworkAddress()
 			// Disconnects from node.
 			return
 		}
 	}
 }
 
-func handleVersion(conn io.Writer, p *peerState, payload io.Reader) error {
+func handleVersion(conn io.Writer, p *peerState, payload io.Reader, addNode chan extendedNetworkAddress) error {
 	if p.established {
 		return fmt.Errorf("received a 'version' message from a host we already went through a version exchange. Closing the connection.")
 	}
@@ -129,17 +145,19 @@ func handleVersion(conn io.Writer, p *peerState, payload io.Reader) error {
 	p.verackSent = true
 	if p.verackReceived {
 		p.established = true
+		addNode <- p.ipPort.toNetworkAddress()
 	}
 	return nil
 }
 
-func handleVerack(conn io.Writer, p *peerState) error {
+func handleVerack(conn io.Writer, p *peerState, addNode chan extendedNetworkAddress) error {
 	if p.verackReceived {
 		return fmt.Errorf("received 'verack' twice from a node. Closing connection")
 	}
 	p.verackReceived = true
 	if p.verackSent {
 		p.established = true
+		addNode <- p.ipPort.toNetworkAddress()
 	}
 	return nil
 }
@@ -160,13 +178,16 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 
 // Things needing implementation.
 //
-// - save the config frequently.
+// - save the config frequently. be more resilient to BitMessage attacks.
+// - Preserve the routing table for longer, don't delete nodes immediately
+// - after they disconnect.
 //
 // from PyBitMessage:
 //
 // broadcastToSendDataQueues((0, 'shutdown', self.HOST))
 //
-// Zero out the list of already contacted nodes every 30 minutes, to give it another chance.
+// Zero out the list of already contacted nodes every 30 minutes, to give it
+// another chance.
 //
 // self.receivedgetbiginv = False #Gets set to true once we receive a
 // getbiginv message from our peer. An abusive peer might request it too much
@@ -191,5 +212,22 @@ type stats struct {
 }
 
 // ipPort is a string that can be resolved with net.ResolveTCPAddr("tcp",
-// ipPort) and the first part can be parsed by net.ParseIP(). 
+// ipPort) and the first part can be parsed by net.ParseIP(). It is illegal to
+// create an ipPort that doesn't follow these conditions.
 type ipPort string
+
+func (ipPort ipPort) toNetworkAddress() extendedNetworkAddress {
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", string(ipPort))
+	var rawIp [16]byte
+	copy(rawIp[:], tcpAddr.IP)
+	addr := extendedNetworkAddress{
+		Time:   uint32(time.Now().Unix()),
+		Stream: streamOne, // This should change after the version exchange.
+		NetworkAddress: NetworkAddress{
+			Services: ConnectionServiceNodeNetwork, //
+			IP:       rawIp,
+			Port:     uint16(tcpAddr.Port),
+		},
+	}
+	return addr
+}
