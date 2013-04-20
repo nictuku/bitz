@@ -67,7 +67,7 @@ func handleConn(conn *net.TCPConn, recvChan chan packet) {
 
 	p := &peerState{}
 	for {
-		conn.SetReadDeadline(time.Now().Add(time.Second * 30))
+		conn.SetReadDeadline(time.Now().Add(connectionTimeout))
 		command, payload, err := readMessage(conn)
 		if err != nil {
 			log.Println("handleConn:", err)
@@ -114,7 +114,6 @@ func handleAddr(conn *net.TCPConn, p *peerState, payload io.Reader) {
 	}
 	for _, addr := range addrs {
 		log.Println("do something with addr", addr)
-
 	}
 }
 

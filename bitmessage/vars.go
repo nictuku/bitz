@@ -19,6 +19,7 @@ const (
 	prefix           = "bitmessage"
 
 	nodeConnectionRetryPeriod = time.Minute * 30
+	connectionTimeout         = time.Second * 30
 )
 
 var (
