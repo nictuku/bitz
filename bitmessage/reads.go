@@ -41,7 +41,7 @@ func readMessage(r io.Reader) (command string, buf io.Reader, err error) {
 
 		n, err = io.ReadAtLeast(r, b, 20)
 		for p.pos = 0; p.pos < n && p.magicPos != 4; p.pos++ {
-			if b[p.pos] == MagicHeaderSlice[p.magicPos] {
+			if b[p.pos] == magicHeaderSlice[p.magicPos] {
 				p.magicPos += 1
 			} else {
 				p.magicPos = 0

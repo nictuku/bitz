@@ -12,7 +12,7 @@ import (
 // restarted. These functions are run by the main goroutine only and are not
 // thread-safe.
 
-func (n *Node) boot() {
+func (n *Node) bootstrap() {
 	if n.knownNodes == nil {
 		n.knownNodes = make(streamNodes)
 	}
@@ -26,19 +26,9 @@ func (n *Node) boot() {
 		n.knownNodes[1][ipPort(node.String())] = remoteNode{}
 	}
 
-	// Keep trying to connect to nodes.
 	// Current bitmessage clients only connect to stream 1.
 	nodes := n.knownNodes[1]
 	handshake(nodes, n.recvChan)
-}
-
-var bootstrapNodes = [][]string{
-	//{"bootstrap8080.bitmessage.org", "8080"},
-	//{"bootstrap8444.bitmessage.org", "8444"},
-	// good:
-	//{"217.91.97.196", "8444"},
-
-	{"192.168.11.8", "8444"},
 }
 
 // findBootStrapNodes uses DNS resolution for finding bootstrap nodes for the
@@ -62,7 +52,6 @@ func findBootstrapNodes() (nodes []net.TCPAddr) {
 	return nodes
 }
 
-// sendVersion 
 func handshake(nodes nodeMap, recvChan chan packet) {
 	for ipPort, node := range nodes {
 		if !node.lastContacted.IsZero() && time.Since(node.lastContacted) < nodeConnectionRetryPeriod {

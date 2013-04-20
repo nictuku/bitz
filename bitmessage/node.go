@@ -12,35 +12,25 @@ import (
 )
 
 type Node struct {
-	cfg *Config
-
+	cfg        *Config
 	knownNodes streamNodes
-
 	// Stats. All access must be synchronized because it's often used by other
 	// goroutines (UI).
-	stats stats
-
+	stats    stats
 	recvChan chan packet
 }
 
-const (
-	portNumber = 9090
-	// Using same value from PyBitmessage, which was originally added to avoid memory blowups.
-	// The protocol itself doesn't restrict it. This should certainly be removed
-	maxPayloadLength = 180000000
-)
-
 func (n *Node) Run() {
-	n.cfg = openConfig(portNumber)
+	n.cfg = openConfig(PortNumber)
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", portNumber))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", PortNumber))
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Println("Listening at", listener.Addr())
 	n.recvChan = make(chan packet)
 	go listen(listener.(*net.TCPListener), n.recvChan)
-	n.boot()
+	n.bootstrap()
 
 	for {
 		select {

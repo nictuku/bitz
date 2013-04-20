@@ -14,11 +14,6 @@ import (
 	"sync"
 )
 
-const (
-	id     = "bitz"
-	prefix = "bitmessage"
-)
-
 // Config is used to persist the node state on disk.
 type Config struct {
 	sync.RWMutex

@@ -2,42 +2,9 @@ package bitmessage
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/binary"
 	"io"
-	"log"
 	"net"
 	"time"
-
-	encVarstring "github.com/spearson78/guardian/encoding/varstring"
-)
-
-func init() {
-
-	buf := new(bytes.Buffer)
-	// Don't attract attention to this client just yet, use the vanilla client
-	// user agent.
-	// encVarstring.WriteVarString(userAgent, "/bitz:1/")
-	encVarstring.WriteVarString(buf, "/PyBitmessage:0.2.8/")
-	userAgent = buf.Bytes()
-
-	buf = new(bytes.Buffer)
-	putVarIntList(buf, []uint64{1})
-	streamNumbers = buf.Bytes()
-
-	err := binary.Read(rand.Reader, binary.LittleEndian, &nonce)
-	if err != nil {
-		log.Fatal("nonce number generator failed. Aborting startup.")
-	}
-}
-
-var (
-	// These values should never be changed after they are written for the first time.
-	nonce         uint64                                 // Filled by init().
-	services      = uint64(ConnectionServiceNodeNetwork) // Only one bit is used for now.
-	streamNumbers = []byte{}                             // Only using stream 1 for now. 
-	userAgent     = []byte{}                             // Filled by init().
-
 )
 
 // When a node creates an outgoing connection, it will immediately advertise
@@ -60,7 +27,7 @@ func writeVersion(w io.Writer, dest *net.TCPAddr) {
 	check(writeNetworkAddress(buf, nil))
 
 	// Random nonce used to detect connections to self.
-	putUint64(buf, 31312830129)
+	putUint64(buf, nonce)
 
 	// User Agent (0x00 if string is 0 bytes long).
 	// varstring already encoded.

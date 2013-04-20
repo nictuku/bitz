@@ -13,20 +13,10 @@ import (
 	"log"
 	"net"
 	"strings"
-	"time"
 
 	"code.google.com/p/go.crypto/ripemd160"
 	encVarint "github.com/spearson78/guardian/encoding/varint"
 )
-
-// Magic value indicating message origin network, and used to seek to next
-// message when stream state is unknown.
-var MagicHeader = uint32(0xE9BEB4D9)
-var MagicHeaderSlice = []byte{0xE9, 0xBE, 0xB4, 0xD9}
-
-const protocolVersion = 1
-
-const nodeConnectionRetryPeriod = time.Minute * 30
 
 func writeMessage(w io.Writer, command string, payload []byte) {
 	// TODO performance: pre-allocate byte slices, share between instances.
@@ -34,7 +24,7 @@ func writeMessage(w io.Writer, command string, payload []byte) {
 
 	// Magic value indicating message origin network, and used to seek to
 	// next message when stream state is unknown.
-	putUint32(buf, MagicHeader)
+	putUint32(buf, magicHeader)
 	// ASCII string identifying the packet content, NULL padded (non-NULL
 	// padding results in packet rejected).
 	putBytes(buf, []byte(nullPadCommand(command)))
@@ -63,7 +53,7 @@ func writeNetworkAddress(w io.Writer, addr *net.TCPAddr) (err error) {
 		// Data refers to this node. Fill the IP address with a loopback address, but set
 		// a meaningful TCP port.
 		putBytes(buf, net.IPv6loopback)
-		putUint16(buf, portNumber)
+		putUint16(buf, uint16(PortNumber))
 		_, err = w.Write(buf.Bytes())
 		return err
 	}
