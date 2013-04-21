@@ -20,6 +20,7 @@ const (
 
 	nodeConnectionRetryPeriod = time.Minute * 30
 	connectionTimeout         = time.Second * 30
+	numNodesForMainStream     = 15
 )
 
 var (
