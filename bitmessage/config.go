@@ -24,7 +24,7 @@ type Config struct {
 }
 
 // saveConfig tries to safe the provided config in a safe way.
-func (s *Config) save(knownNodes streamNodes) {
+func (s *Config) save(connectedNodes streamNodes) {
 	s.Lock()
 	defer s.Unlock()
 	if s.path == "" {
@@ -32,7 +32,7 @@ func (s *Config) save(knownNodes streamNodes) {
 		return
 	}
 	s.Nodes = make([]ipPort, 0, 10)
-	for _, nodes := range knownNodes {
+	for _, nodes := range connectedNodes {
 		for addr, _ := range nodes {
 			s.Nodes = append(s.Nodes, addr)
 		}

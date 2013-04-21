@@ -23,7 +23,22 @@ type remoteNode struct {
 	lastContacted time.Time
 }
 
+func (n *Node) numStreamNodes(stream int) int {
+	nodes, ok := n.connectedNodes[stream]
+	if !ok {
+		return 0
+	}
+	return len(nodes)
+}
+
 func (n *Node) addNode(stream int, ipPort ipPort, node remoteNode) {
+	if _, ok := n.connectedNodes[stream]; !ok {
+		n.connectedNodes[stream] = make(nodeMap)
+	}
+	n.connectedNodes[stream][ipPort] = node
+}
+
+func (n *Node) addKnownNode(stream int, ipPort ipPort, node remoteNode) {
 	if _, ok := n.knownNodes[stream]; !ok {
 		n.knownNodes[stream] = make(nodeMap)
 	}
@@ -31,16 +46,16 @@ func (n *Node) addNode(stream int, ipPort ipPort, node remoteNode) {
 }
 
 func (n *Node) delNode(stream int, ipPort ipPort) {
-	if _, ok := n.knownNodes[stream]; !ok {
-		n.knownNodes[stream] = make(nodeMap)
+	if _, ok := n.connectedNodes[stream]; !ok {
+		n.connectedNodes[stream] = make(nodeMap)
 	}
-	delete(n.knownNodes[stream], ipPort)
+	delete(n.connectedNodes[stream], ipPort)
 	log.Println("deleted node", ipPort, "from stream", stream)
 }
 
 func (n *Node) bootstrap() {
 	// Grab nodes from the config, add them to stream 1.
-	n.knownNodes = make(streamNodes)
+	n.connectedNodes = make(streamNodes)
 	for _, ipPort := range n.cfg.Nodes {
 		go handshake(ipPort, remoteNode{}, n.resp)
 	}

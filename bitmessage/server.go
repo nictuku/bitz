@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -19,7 +18,11 @@ type Node struct {
 	// goroutines (UI).
 	stats stats
 	resp  responses
-	// knownNodes are all nodes we know of for each stream number.
+	// connectedNodes are all nodes we have a connection established to, for
+	// each stream.
+	connectedNodes streamNodes
+	// connectedNodes are all nodes we know of for each stream number in
+	// addition to the connectedNodes.
 	knownNodes streamNodes
 }
 
@@ -30,6 +33,9 @@ type responses struct {
 }
 
 func (n *Node) Run() {
+	n.connectedNodes = make(streamNodes)
+	n.knownNodes = make(streamNodes)
+
 	n.cfg = openConfig(PortNumber)
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", PortNumber))
@@ -51,17 +57,42 @@ func (n *Node) Run() {
 		select {
 		case addrs := <-n.resp.addrsChan:
 			log.Printf("nodesChan, got: %d nodes", len(addrs))
+			// Only connect to stream one for now.
+
+			needExtra := numNodesForMainStream - n.numStreamNodes(streamOne)
+			i := 0
+			// This is imprecise because I check the count of nodes using a
+			// metric that is only updated after the connection is
+			// established, not soon after a handshake goroutine is
+			// dispatched. That's fine, we'll just a have a few extra too may
+			// nodes.
+			log.Println("need extra", needExtra)
 			for _, addr := range addrs {
+				if addr.Stream != streamOne {
+					continue
+				}
 				node := remoteNode{}
-				go handshake(addr.ipPort(), node, n.resp)
+				if i <= needExtra {
+					log.Println("handshaking with", addr.ipPort())
+					// Nodes for which the connection attempt fail won't even
+					// make it to n.knownNodes.
+					go handshake(addr.ipPort(), node, n.resp)
+					i++
+				} else {
+					n.addKnownNode(int(addr.Stream), addr.ipPort(), node)
+				}
 			}
+
 		case addr := <-n.resp.addNodeChan:
+
 			node := remoteNode{lastContacted: time.Now()}
 			n.addNode(int(addr.Stream), addr.ipPort(), node)
 		case addr := <-n.resp.delNodeChan:
 			n.delNode(int(addr.Stream), addr.ipPort())
+			// XXX if connection counter drops below numNodesforMainStream,
+			// get a node from knownNodes and promote it.
 		case <-saveTick:
-			n.cfg.save(n.knownNodes)
+			n.cfg.save(n.connectedNodes)
 		}
 	}
 }
@@ -170,9 +201,7 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 	if err != nil {
 		return fmt.Errorf("parseAddr error: %v. Closing connection", err)
 	}
-	log.Println("respNodes starting")
 	respNodes <- addrs
-	log.Println("respNodes done")
 	return nil
 }
 
@@ -207,7 +236,6 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 // Random nonce used to detect connections to self.
 
 type stats struct {
-	sync.RWMutex
 	streamConnectionCount map[int]int
 }
 
