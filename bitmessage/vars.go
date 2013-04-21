@@ -39,15 +39,15 @@ var (
 	userAgent     = []byte{}                             // Filled by init().
 
 	bootstrapNodes = [][]string{
-		// DNS nodes used by PyBitMessage for bootstrapping:
-		// {"bootstrap8080.bitmessage.org", "8080"},
-		// {"bootstrap8444.bitmessage.org", "8444"},
-
 		// The only node that seems to be up:
-		// {"217.91.97.196", "8444"},
+		{"217.91.97.196", "8444"},
+
+		// DNS nodes used by PyBitMessage for bootstrapping:
+		{"bootstrap8080.bitmessage.org", "8080"},
+		{"bootstrap8444.bitmessage.org", "8444"},
 
 		// My test PyBitMessage.
-		{"192.168.11.8", "8444"},
+		// {"192.168.11.8", "8444"},
 	}
 )
 
