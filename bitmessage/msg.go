@@ -16,8 +16,13 @@ import (
 	"strings"
 
 	"code.google.com/p/go.crypto/ripemd160"
-	encVarint "github.com/spearson78/guardian/encoding/varint"
+	encVarint "github.com/nictuku/guardian/encoding/varint"
 )
+
+func init() {
+	// Flip the byte order for BitMessage, which is different than BitCoin.
+	encVarint.ByteOrder = binary.BigEndian
+}
 
 func writeMessage(w io.Writer, command string, payload []byte) {
 	// TODO performance: pre-allocate byte slices, share between instances.
@@ -95,7 +100,7 @@ func parseIP(ip [16]byte) net.IP {
 // resulting in a 64 byte hash. Only the first 32 bytes are used; the later 32
 // bytes are ignored.
 type inventoryVector struct {
-	hash [32]byte
+	Hash [32]byte
 }
 
 // Use varint and varstring from:
