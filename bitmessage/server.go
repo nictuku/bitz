@@ -143,10 +143,13 @@ func handleConn(conn *net.TCPConn, resp responses) {
 			err = handleAddr(conn, p, payload, resp.addrsChan)
 		case "verack":
 			err = handleVerack(conn, p, resp.addNodeChan)
+		case "inv":
+			err = handleInv(conn, p, payload)
 		default:
 			log.Printf("ignoring unknown command %q", command)
 		}
 		if err != nil {
+			log.Printf("error while processing command %v: %v", command, err)
 			resp.delNodeChan <- ipPort(conn.RemoteAddr().String()).toNetworkAddress()
 			// Disconnects from node.
 			return
@@ -202,6 +205,20 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 		return fmt.Errorf("parseAddr error: %v. Closing connection", err)
 	}
 	respNodes <- addrs
+	return nil
+}
+
+func handleInv(conn io.Writer, p *peerState, payload io.Reader) error {
+	if !p.established {
+		return fmt.Errorf("version unknown. Closing connection")
+	}
+	invs, err := parseInv(payload)
+	if err != nil {
+		return fmt.Errorf("parseInv error: %v. Closing connection", err)
+	}
+	for i, inv := range invs {
+		fmt.Printf("inv found #%d: %x", i, inv)
+	}
 	return nil
 }
 

@@ -94,7 +94,7 @@ func parseIP(ip [16]byte) net.IP {
 // have or data which is being requested. Two rounds of SHA-512 are used,
 // resulting in a 64 byte hash. Only the first 32 bytes are used; the later 32
 // bytes are ignored.
-type InventoryVector struct {
+type inventoryVector struct {
 	hash [32]byte
 }
 
@@ -208,7 +208,7 @@ const (
 // Maximum payload length: 50000 items.
 type InvMessage struct {
 	count     varint
-	inventory []InventoryVector // max 50000 items.
+	inventory []inventoryVector // max 50000 items.
 }
 
 // Objects:
