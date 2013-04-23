@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	encVarint "github.com/spearson78/guardian/encoding/varint"
 	encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
 
@@ -119,4 +120,17 @@ func parseVersion(r io.Reader) (versionMessage, error) {
 
 func parseAddr(r io.Reader) ([]extendedNetworkAddress, error) {
 	return readNetworkAddressList(r)
+}
+
+func parseInv(r io.Reader) ([]inventoryVector, error) {
+	count, _, err := encVarint.ReadVarInt(r)
+	if err != nil {
+		return nil, err
+	}
+	if count > 10000 {
+		return nil, fmt.Errorf("too many inventor vectors advertised: %d, not reading them.", count)
+	}
+	ivs := make([]inventoryVector, count)
+	err = binary.Read(r, binary.BigEndian, ivs)
+	return ivs, err
 }
