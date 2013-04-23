@@ -2,10 +2,17 @@ package bitmessage
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	encVarint "github.com/nictuku/guardian/encoding/varint"
 	"io/ioutil"
 	"testing"
 )
+
+func init() {
+	// Flip the byte order for BitMessage, which is different than BitCoin.
+	encVarint.ByteOrder = binary.BigEndian
+}
 
 type test struct {
 	raw     []byte
@@ -81,5 +88,18 @@ func TestWriteAndRead(t *testing.T) {
 		if !bytes.Equal(buf, tt.payload) {
 			t.Errorf("payload wanted %q got %q (test %d)", tt.payload, payload, i)
 		}
+	}
+}
+
+func TestVarIntDecode(t *testing.T) {
+	// This was obtained by debugging a PyBitMessage message. Only the first 4
+	// bytes are relevant. The problem I had was with endianess if the varint
+	// decoding library (bitcoin and bitmessage use different endianess.)
+	count, x, err := encVarint.ReadVarInt(bytes.NewBuffer([]byte("\xfd\x10y\xc2\xeb\xbf\x12\xe0k:")))
+	if err != nil {
+		t.Errorf("got err: %v", err.Error())
+	}
+	if count != 4217 {
+		t.Errorf("wanted 4217, got %d (%d)", count, x)
 	}
 }

@@ -5,10 +5,16 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	//"log"
 
-	encVarint "github.com/spearson78/guardian/encoding/varint"
+	encVarint "github.com/nictuku/guardian/encoding/varint"
 	encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
+
+func init() {
+	// Flip the byte order for BitMessage, which is different than BitCoin.
+	encVarint.ByteOrder = binary.BigEndian
+}
 
 type parserState struct {
 	magicPos      int // if == 4 means all magic bytes have been found and is ready to read data.
@@ -126,9 +132,6 @@ func parseInv(r io.Reader) ([]inventoryVector, error) {
 	count, _, err := encVarint.ReadVarInt(r)
 	if err != nil {
 		return nil, err
-	}
-	if count > 10000 {
-		return nil, fmt.Errorf("too many inventor vectors advertised: %d, not reading them.", count)
 	}
 	ivs := make([]inventoryVector, count)
 	err = binary.Read(r, binary.BigEndian, ivs)

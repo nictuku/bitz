@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"time"
 
+	encVarint "github.com/nictuku/guardian/encoding/varint"
 	encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
 
@@ -54,7 +55,8 @@ var (
 
 // init initializes package variables and constants.
 func init() {
-
+	// Flip the byte order for BitMessage, which is different than BitCoin.
+	encVarint.ByteOrder = binary.BigEndian
 	buf := new(bytes.Buffer)
 	// Don't attract attention to this client just yet, use the vanilla client
 	// user agent.

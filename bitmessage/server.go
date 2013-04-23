@@ -24,17 +24,20 @@ type Node struct {
 	// connectedNodes are all nodes we know of for each stream number in
 	// addition to the connectedNodes.
 	knownNodes streamNodes
+	objects    objectsInventory
 }
 
 type responses struct {
 	addrsChan   chan []extendedNetworkAddress
 	addNodeChan chan extendedNetworkAddress
 	delNodeChan chan extendedNetworkAddress
+	invChan     chan objectsInventory
 }
 
 func (n *Node) Run() {
 	n.connectedNodes = make(streamNodes)
 	n.knownNodes = make(streamNodes)
+	n.objects = make(objectsInventory)
 
 	n.cfg = openConfig(PortNumber)
 
@@ -47,6 +50,7 @@ func (n *Node) Run() {
 		make(chan []extendedNetworkAddress),
 		make(chan extendedNetworkAddress),
 		make(chan extendedNetworkAddress),
+		make(chan objectsInventory),
 	}
 	go listen(listener.(*net.TCPListener), n.resp)
 	n.bootstrap()
@@ -84,13 +88,14 @@ func (n *Node) Run() {
 			}
 
 		case addr := <-n.resp.addNodeChan:
-
 			node := remoteNode{lastContacted: time.Now()}
 			n.addNode(int(addr.Stream), addr.ipPort(), node)
 		case addr := <-n.resp.delNodeChan:
 			n.delNode(int(addr.Stream), addr.ipPort())
 			// XXX if connection counter drops below numNodesforMainStream,
 			// get a node from knownNodes and promote it.
+		case obj := <-n.resp.invChan:
+			n.objects.merge(obj)
 		case <-saveTick:
 			n.cfg.save(n.connectedNodes)
 		}
@@ -144,7 +149,7 @@ func handleConn(conn *net.TCPConn, resp responses) {
 		case "verack":
 			err = handleVerack(conn, p, resp.addNodeChan)
 		case "inv":
-			err = handleInv(conn, p, payload)
+			err = handleInv(conn, p, payload, resp.invChan)
 		default:
 			log.Printf("ignoring unknown command %q", command)
 		}
@@ -208,7 +213,7 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 	return nil
 }
 
-func handleInv(conn io.Writer, p *peerState, payload io.Reader) error {
+func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objectsInventory) error {
 	if !p.established {
 		return fmt.Errorf("version unknown. Closing connection")
 	}
@@ -216,9 +221,11 @@ func handleInv(conn io.Writer, p *peerState, payload io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("parseInv error: %v. Closing connection", err)
 	}
-	for i, inv := range invs {
-		fmt.Printf("inv found #%d: %x", i, inv)
+	objects := make(objectsInventory)
+	for _, inv := range invs {
+		objects[inv.Hash] = p.ipPort
 	}
+	obj <- objects
 	return nil
 }
 
