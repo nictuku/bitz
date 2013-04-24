@@ -103,6 +103,19 @@ type inventoryVector struct {
 	Hash [32]byte
 }
 
+func writeInventoryVector(w io.Writer, invs []inventoryVector) (err error) {
+	if len(invs) > maxInventoryEntries {
+		return fmt.Errorf("Asked to write %d inventory vectors for getdata, but the maximum is %d. Ignoring.", len(invs), maxInventoryEntries)
+	}
+	buf := new(bytes.Buffer)
+	encVarint.WriteVarInt(buf, uint64(len(invs)))
+	if err = binary.Write(buf, binary.BigEndian, invs); err != nil {
+		return err
+	}
+	_, err = w.Write(buf.Bytes())
+	return err
+}
+
 // Use varint and varstring from:
 // https://github.com/spearson78/guardian/tree/master/encoding
 type varint []byte
@@ -201,19 +214,6 @@ type versionMessage struct {
 	binaryVersionMessage
 	userAgent     string
 	streamNumbers []uint64
-}
-
-const (
-	// This is a normal network node.
-	ConnectionServiceNodeNetwork = 1
-)
-
-// InvMessage allows a node to advertise its knowledge of one or more objects.
-// It can be received unsolicited, or in reply to getmessages.
-// Maximum payload length: 50000 items.
-type InvMessage struct {
-	count     varint
-	inventory []inventoryVector // max 50000 items.
 }
 
 // Objects:

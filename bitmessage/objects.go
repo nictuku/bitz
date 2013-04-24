@@ -1,7 +1,5 @@
 package bitmessage
 
-import "log"
-
 // Object store.
 
 // TODO: Move to a map of hashes to identifiers instead of ipPort.
@@ -18,6 +16,4 @@ func (inv objectsInventory) merge(inv2 objectsInventory) {
 	for h, ipPort := range inv2 {
 		inv[h] = ipPort
 	}
-	log.Println("=================")
-	log.Printf("new object inventory map length: %d", len(inv))
 }

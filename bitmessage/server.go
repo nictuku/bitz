@@ -8,6 +8,8 @@ import (
 	"log"
 	"net"
 	"time"
+
+	"sync"
 )
 
 type Node struct {
@@ -151,7 +153,8 @@ func handleConn(conn *net.TCPConn, resp responses) {
 		case "inv":
 			err = handleInv(conn, p, payload, resp.invChan)
 		default:
-			log.Printf("ignoring unknown command %q", command)
+			// XXX Used during development.
+			log.Fatalf("ignoring unknown command %q", command)
 		}
 		if err != nil {
 			log.Printf("error while processing command %v: %v", command, err)
@@ -213,6 +216,8 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 	return nil
 }
 
+var once sync.Once
+
 func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objectsInventory) error {
 	if !p.established {
 		return fmt.Errorf("version unknown. Closing connection")
@@ -224,6 +229,11 @@ func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objects
 	objects := make(objectsInventory)
 	for _, inv := range invs {
 		objects[inv.Hash] = p.ipPort
+		// XXX Used during development.
+		once.Do(
+			func() {
+				writeGetData(conn, []inventoryVector{inv})
+			})
 	}
 	obj <- objects
 	return nil

@@ -49,3 +49,16 @@ func writeVerack(w io.Writer) {
 // Provide information on known nodes of the network. Non-advertised nodes
 // should be forgotten after typically 3 hours.
 // func writeAddr
+
+// InvMessage allows a node to advertise its knowledge of one or more objects.
+// It can be received unsolicited, or in reply to getmessages.
+// Maximum payload length: 50000 items.
+// func writeInv
+
+// getdata is used in response to an inv message to retrieve the content of a specific object after filtering known elements.
+// Payload (maximum payload length: 50000 entries):
+func writeGetData(w io.Writer, invs []inventoryVector) {
+	buf := new(bytes.Buffer)
+	check(writeInventoryVector(buf, invs))
+	writeMessage(w, "getdata", buf.Bytes())
+}
