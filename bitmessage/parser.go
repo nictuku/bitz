@@ -29,7 +29,7 @@ type parserState struct {
 // It verifies that the content matches the checksum in the message header and
 // throws an error otherwise.
 func readMessage(r io.Reader) (command string, buf io.Reader, err error) {
-	b := make([]byte, 512)
+	b := make([]byte, 20)
 	p := parserState{}
 
 	data := new(bytes.Buffer)
