@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"strings"
 
@@ -249,12 +250,12 @@ type PubKey struct {
 }
 
 // Used for person-to-person messages.
-type Msg struct {
-	powNonce       uint64 // Random nonce used for the Proof Of Work
-	time           uint32 // The time that this message was generated and broadcast.
-	addressVersion varint // The address' version.
-	streamNumber   varint // The address' stream number
-	encrypted      []byte // Encrypted data. See also: UnencryptedMessageData
+type msg struct {
+	PowNonce       [8]byte // Random nonce used for the Proof Of Work
+	Time           uint32  // The time that this message was generated and broadcast.
+	AddressVersion uint64  // varint, the address' version.
+	StreamNumber   uint64  // varint, the address' stream number
+	Encrypted      []byte  // Encrypted data. See also: UnencryptedMessageData
 }
 
 type Broadcast struct {
@@ -356,6 +357,16 @@ func readUint32(r io.Reader) (x uint32) {
 	return x
 }
 
+func readUint64(r io.Reader) (x uint64) {
+	check(binary.Read(r, binary.BigEndian, &x))
+	return x
+}
+
+func readBytes8(r io.Reader) (x [8]byte) {
+	check(binary.Read(r, binary.BigEndian, &x))
+	return x
+}
+
 // XXX return errors too
 func readVarIntList(r io.Reader) []uint64 {
 	length, _, err := encVarint.ReadVarInt(r)
@@ -397,6 +408,26 @@ func ProofOfWork(msg []byte) ([]byte, error) {
 		msg = h.Sum(nil)
 	}
 	return msg, nil
+}
+
+var n2to64 = uint64(math.Pow(2, 64))
+
+func checkProofOfWork(data []byte, nonce [8]byte) error {
+	// From: https://bitmessage.org/wiki/Proof_of_work
+	// Not sure if this is correct. 
+	// TODO: Add tests when I have good test cases.
+
+	initialHash := sha512.New().Sum(data)
+
+	second := sha512.New().Sum(append(nonce[:], initialHash...))
+	resultHash := sha512.New().Sum(second)
+
+	POWValue := binary.BigEndian.Uint64(resultHash[0:8])
+	target := n2to64 / uint64((len(data)+payloadLengthExtraBytes)*averageProofOfWorkNonceTrialsPerByte)
+	if target <= POWValue {
+		return nil
+	}
+	return fmt.Errorf("checkProofOfWork did not pass")
 }
 
 // Bitmessage produces a hash for the provided message using a SHA-512 in the

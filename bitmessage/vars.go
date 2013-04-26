@@ -19,10 +19,12 @@ const (
 	id               = "bitz"
 	prefix           = "bitmessage"
 
-	nodeConnectionRetryPeriod = time.Minute * 30
-	connectionTimeout         = time.Second * 30
-	numNodesForMainStream     = 15
-	maxInventoryEntries       = 50000
+	nodeConnectionRetryPeriod            = time.Minute * 30
+	connectionTimeout                    = time.Second * 30
+	numNodesForMainStream                = 15
+	maxInventoryEntries                  = 50000
+	payloadLengthExtraBytes              = 14000
+	averageProofOfWorkNonceTrialsPerByte = 320
 
 	// This is a normal network node.
 	ConnectionServiceNodeNetwork = 1
