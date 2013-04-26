@@ -96,6 +96,7 @@ func handshake(ipPort ipPort, node remoteNode, resp responses) {
 		var err error
 		if node.conn, err = net.Dial("tcp", string(ipPort)); err != nil {
 			log.Printf("error connecting to node %v: %v", ipPort, err)
+			resp.delNodeChan <- ipPort.toNetworkAddress()
 			return
 		}
 
