@@ -7,9 +7,10 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"time"
 
-	"sync"
+	"github.com/pmylund/go-bloom"
 )
 
 type Node struct {
@@ -23,6 +24,10 @@ type Node struct {
 	// connectedNodes are all nodes we have a connection established to, for
 	// each stream.
 	connectedNodes streamNodes
+	// Bloomfilter of unreachable IPs.
+	// TODO: Rotate the filters and expire them.
+	// TODO: Save it on disk.
+	unreachableNodes *bloom.Filter
 	// connectedNodes are all nodes we know of for each stream number in
 	// addition to the connectedNodes.
 	knownNodes streamNodes
@@ -40,6 +45,7 @@ func (n *Node) Run() {
 	n.connectedNodes = make(streamNodes)
 	n.knownNodes = make(streamNodes)
 	n.objects = make(objectsInventory)
+	n.unreachableNodes = bloom.New(10000, 0.01)
 
 	n.cfg = openConfig(PortNumber)
 
@@ -77,6 +83,12 @@ func (n *Node) Run() {
 				if addr.Stream != streamOne {
 					continue
 				}
+				if _, ok := n.connectedNodes[streamOne][addr.ipPort()]; ok {
+					continue
+				}
+				if n.unreachableNodes.Test(addr.IP[:]) {
+					continue
+				}
 				node := remoteNode{}
 				if i <= needExtra {
 					log.Println("handshaking with", addr.ipPort())
@@ -94,6 +106,7 @@ func (n *Node) Run() {
 			n.addNode(int(addr.Stream), addr.ipPort(), node)
 		case addr := <-n.resp.delNodeChan:
 			n.delNode(int(addr.Stream), addr.ipPort())
+			n.unreachableNodes.Add(addr.IP[:])
 			// XXX if connection counter drops below numNodesforMainStream,
 			// get a node from knownNodes and promote it.
 		case obj := <-n.resp.invChan:
