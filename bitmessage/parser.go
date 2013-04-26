@@ -82,6 +82,7 @@ func readMessage(r io.Reader) (command string, buf io.Reader, err error) {
 	if _, err := io.CopyN(data, r, int64(missingData)); err != nil && err != io.EOF {
 		return p.command, nil, err
 	}
+	// XXX There appears to be too much data. Read byte by byte instead?
 	if data.Len() != p.payloadLength {
 		return p.command, nil, fmt.Errorf("readMessage: stream ended before we could get the payload data, wanted length %d, got %d", p.payloadLength, data.Len())
 	}
@@ -136,4 +137,30 @@ func parseInv(r io.Reader) ([]inventoryVector, error) {
 	ivs := make([]inventoryVector, count)
 	err = binary.Read(r, binary.BigEndian, ivs)
 	return ivs, err
+}
+
+func parseMsg(r io.Reader) (m msg, err error) {
+	// TODO: Add a test when I find a good, valid test case.
+
+	m.PowNonce = readBytes8(r)
+	// TODO:
+	//if err := checkProofOfWork(r, m.PowNonce); err != nil {
+	//	return m, err
+	//}
+	m.Time = readUint32(r) // OK for protocol V1. V2 is moving to 8 byte time.
+	m.AddressVersion, _, err = encVarint.ReadVarInt(r)
+	if err != nil {
+		return m, fmt.Errorf("parseMsg reading Address Version: %v", err)
+	}
+	m.StreamNumber, _, err = encVarint.ReadVarInt(r)
+	if err != nil {
+		return m, fmt.Errorf("parseMsg reading Stream Number: %v", err)
+	}
+	// or use readBytes()
+	if n, err := r.Read(m.Encrypted); err != nil {
+		return m, err
+	} else if n == 0 {
+		return m, fmt.Errorf("parseMsg Encrypted content empty")
+	}
+	return m, nil
 }

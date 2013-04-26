@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/pmylund/go-bloom"
+	"github.com/spearson78/guardian/encoding/base58"
 )
 
 type Node struct {
@@ -39,6 +40,7 @@ type responses struct {
 	addNodeChan chan extendedNetworkAddress
 	delNodeChan chan extendedNetworkAddress
 	invChan     chan objectsInventory
+	msgChan     chan msg
 }
 
 func (n *Node) Run() {
@@ -59,6 +61,7 @@ func (n *Node) Run() {
 		make(chan extendedNetworkAddress),
 		make(chan extendedNetworkAddress),
 		make(chan objectsInventory),
+		make(chan msg),
 	}
 	go listen(listener.(*net.TCPListener), n.resp)
 	n.bootstrap()
@@ -111,6 +114,10 @@ func (n *Node) Run() {
 			// get a node from knownNodes and promote it.
 		case obj := <-n.resp.invChan:
 			n.objects.merge(obj)
+		case msg := <-n.resp.msgChan:
+			log.Printf("received message %+q", msg)
+			log.Printf("received message content: len=%d, content=%q \n====\n%x", len(msg.Encrypted), msg.Encrypted, msg.Encrypted)
+			log.Fatalln("done")
 		case <-saveTick:
 			n.cfg.save(n.connectedNodes)
 		}
@@ -165,9 +172,10 @@ func handleConn(conn *net.TCPConn, resp responses) {
 			err = handleVerack(conn, p, resp.addNodeChan)
 		case "inv":
 			err = handleInv(conn, p, payload, resp.invChan)
+		case "msg":
+			err = handleMsg(conn, p, payload, resp.msgChan)
 		default:
-			// XXX Used during development.
-			log.Fatalf("ignoring unknown command %q", command)
+			err = fmt.Errorf("ignoring unknown command %q", command)
 		}
 		if err != nil {
 			log.Printf("error while processing command %v: %v", command, err)
@@ -229,7 +237,7 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 	return nil
 }
 
-var once sync.Once
+var i = 0
 
 func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objectsInventory) error {
 	if !p.established {
@@ -241,14 +249,32 @@ func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objects
 	}
 	objects := make(objectsInventory)
 	for _, inv := range invs {
-		objects[inv.Hash] = p.ipPort
-		// XXX Used during development.
-		once.Do(
-			func() {
-				writeGetData(conn, []inventoryVector{inv})
-			})
+		objects.add(inv.Hash, p.ipPort)
+		// XXX Used during development. Obviously racy.
+		if i < 10 {
+			b, err := base58.BitcoinEncoding.Encode(inv.Hash[:])
+			if err != nil {
+				// XXX
+				log.Println("could not encode base58 %v: %v", inv.Hash, err)
+			}
+			log.Printf("requesting content: BM-%v", string(b))
+			writeGetData(conn, []inventoryVector{inv})
+		}
+		i++
 	}
 	obj <- objects
+	return nil
+}
+
+func handleMsg(conn io.Writer, p *peerState, payload io.Reader, mChan chan msg) error {
+	if !p.established {
+		return fmt.Errorf("version unknown. Closing connection")
+	}
+	m, err := parseMsg(payload)
+	if err != nil {
+		return fmt.Errorf("handleMsg parseMsg error: %v. Closing connection", err)
+	}
+	mChan <- m
 	return nil
 }
 
