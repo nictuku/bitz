@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/pmylund/go-bloom"
