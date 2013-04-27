@@ -429,44 +429,107 @@ func parseMsg(r io.Reader) (m msg, err error) {
 	return m, nil
 }
 
-type Broadcast struct {
+type broadcast struct {
 	// Random nonce used for the Proof Of Work
-	powNonce uint64
+	PowNonce [8]byte
 	// The time that this message was generated and broadcast.
-	time uint32
+	Time uint64 // XXX still writing uint32, moving to 64 in v2.
 	// The version number of this broadcast protocol message.
-	broadcastVersion varint
+	BroadcastVersion uint64
 	// Sender's address version number. This is needed in order to calculate
 	// the sender's address to show in the UI, and also to allow for forwards
 	// compatible changes to the public-key data included below.
-	addressVersion varint
+	AddressVersion uint64
 	// Sender's stream number.
-	streamNumber varint
+	StreamNumber uint64
 	// A bitfield of optional behaviors and features that can be expected from
 	// the node with this pubkey included in this msg message (the sender's
 	// pubkey).
-	behavior uint32
+	Behavior uint32 // => retired in new version.
+
 	// The ECC public key used for signing (uncompressed format; normally
 	// prepended with \x04).
-	publicSigningKey [64]byte
+	PublicSigningKey [64]byte
 	// The ECC public key used for encryption (uncompressed format; normally
 	// prepended with \x04 ).
-	publicEncryptionKey [64]byte
+	PublicEncryptionKey [64]byte
 	// The sender's address hash. This is included so that nodes can more
 	// cheaply detect whether this is a broadcast message for which they are
 	// listening, although it must be verified with the public key above.
-	addressHash [20]byte
+	AddressHash [20]byte
 	// Message encoding type.
-	encoding varint
+	Encoding uint64
 	// Message length.
-	messageLength varint
+	MessageLength uint64
 	// The message.
-	message []byte
+	Message []byte
 	// Length of the signature.
-	sigLength varint
+	SigLength uint64
 	// The ECDSA signature which covers everything from the msg_version to the
 	// ack_data.
-	singnature []byte
+	Signature []byte
+}
+
+func parseBroadcast(r io.Reader) (b broadcast, err error) {
+	b.PowNonce = readBytes8(r)
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, r); err != nil {
+		return b, err
+	}
+	r = buf
+	if err := checkProofOfWork(buf.Bytes(), b.PowNonce); err != nil {
+		return b, err
+	}
+	// TODO: Soon moving to uint32 in the wire.
+	b.Time = uint64(readUint32(r))
+	b.BroadcastVersion, _, err = encVarint.ReadVarInt(r)
+	if err != nil {
+		return b, fmt.Errorf("parseBroadcast reading broadcast version: %v\n", err)
+	}
+	if b.BroadcastVersion != 1 {
+		return b, fmt.Errorf("I do not yet support Broadcasts of version %d", b.BroadcastVersion)
+	}
+	b.AddressVersion, _, err = encVarint.ReadVarInt(r)
+	if err != nil {
+		return b, fmt.Errorf("parseBroadcast reading address version: %v\n", err)
+	}
+	b.StreamNumber, _, err = encVarint.ReadVarInt(r)
+	if err != nil {
+		return b, fmt.Errorf("parseBroadcast reading Stream Number: %v\n", err)
+	}
+	b.Behavior = readUint32(r)
+	if b.Behavior != 1 {
+		log.Printf("warning: parseBroadcast unknown behavior mask: %x\n", b.Behavior)
+	}
+	if err = binary.Read(r, binary.BigEndian, &b.PublicSigningKey); err != nil {
+		return b, fmt.Errorf("parseBroadcast PublicSigningKey err: %v\n", err)
+	}
+	if err = binary.Read(r, binary.BigEndian, &b.PublicEncryptionKey); err != nil {
+		return b, fmt.Errorf("parseBroadcast PublicEncryptionKey err: %v\n", err)
+	}
+	if err = binary.Read(r, binary.BigEndian, &b.AddressHash); err != nil {
+		return b, fmt.Errorf("parseBroadcast AddressHash err: %v\n", err)
+	}
+	// PyBitMessage just writes '\x02'.
+	b.Encoding, _, err = encVarint.ReadVarInt(r)
+	if err != nil {
+		return b, fmt.Errorf("parseBroadcast reading encoding: %v\n", err)
+	}
+	if b.MessageLength, _, err = encVarint.ReadVarInt(r); err != nil {
+		return b, fmt.Errorf("parseBroadcast reading message length: %v\n", err)
+	}
+	b.Message = make([]byte, b.MessageLength)
+	if _, err = r.Read(b.Message); err != nil {
+		return b, fmt.Errorf("parseBroadcast reading message: %v\n", err)
+	}
+	if b.SigLength, _, err = encVarint.ReadVarInt(r); err != nil {
+		return b, fmt.Errorf("parseBroadcast reading siglength: %v\n", err)
+	}
+	b.Signature = make([]byte, b.SigLength)
+	if _, err = r.Read(b.Message); err != nil {
+		return b, fmt.Errorf("parseBroadcast reading signature: %v\n", err)
+	}
+	return b, nil
 }
 
 func nullPadCommand(command string) string {

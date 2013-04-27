@@ -36,11 +36,12 @@ type Node struct {
 }
 
 type responses struct {
-	addrsChan   chan []extendedNetworkAddress
-	addNodeChan chan extendedNetworkAddress
-	delNodeChan chan extendedNetworkAddress
-	invChan     chan objectsInventory
-	msgChan     chan msg
+	addrsChan     chan []extendedNetworkAddress
+	addNodeChan   chan extendedNetworkAddress
+	delNodeChan   chan extendedNetworkAddress
+	invChan       chan objectsInventory
+	msgChan       chan msg
+	broadcastChan chan broadcast
 }
 
 func (n *Node) Run() {
@@ -62,6 +63,7 @@ func (n *Node) Run() {
 		make(chan extendedNetworkAddress),
 		make(chan objectsInventory),
 		make(chan msg),
+		make(chan broadcast),
 	}
 	go listen(listener.(*net.TCPListener), n.resp)
 	n.bootstrap()
@@ -116,6 +118,10 @@ func (n *Node) Run() {
 		case msg := <-n.resp.msgChan:
 			log.Printf("received message %+q", msg)
 			log.Printf("received message content: len=%d, content=%q \n====\n%x", len(msg.Encrypted), msg.Encrypted, msg.Encrypted)
+		//	log.Fatalln("done")
+		case broadcast := <-n.resp.broadcastChan:
+			//log.Printf("received broadcast %+q", broadcast)
+			log.Printf("received brodcast content: %v", string(broadcast.Message))
 			log.Fatalln("done")
 		case <-saveTick:
 			// XXX Save on file in disk instead. See config.go.
@@ -179,6 +185,8 @@ func handleConn(conn *net.TCPConn, resp responses) {
 			err = handleInv(conn, p, payload, resp.invChan)
 		case "msg":
 			err = handleMsg(conn, p, payload, resp.msgChan)
+		case "broadcast":
+			err = handleBroadcast(conn, p, payload, resp.broadcastChan)
 		default:
 			// XXX
 			err = fmt.Errorf("ignoring unknown command %q", command)
@@ -259,7 +267,7 @@ func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objects
 	for _, inv := range invs {
 		objects.add(inv.Hash, p.ipPort)
 		// XXX Used during development. Obviously racy.
-		if i < 10 {
+		if i < 100 {
 			b, err := base58.BitcoinEncoding.Encode(inv.Hash[:])
 			if err != nil {
 				// XXX
@@ -283,6 +291,18 @@ func handleMsg(conn io.Writer, p *peerState, payload io.Reader, mChan chan msg) 
 		return fmt.Errorf("handleMsg parseMsg error: %v. Closing connection", err)
 	}
 	mChan <- m
+	return nil
+}
+
+func handleBroadcast(conn io.Writer, p *peerState, payload io.Reader, bChan chan broadcast) error {
+	if !p.established {
+		return fmt.Errorf("version unknown. Closing connection")
+	}
+	b, err := parseBroadcast(payload)
+	if err != nil {
+		return fmt.Errorf("handleBroadcast parseBroadcast error: %v. Closing connection", err)
+	}
+	bChan <- b
 	return nil
 }
 
