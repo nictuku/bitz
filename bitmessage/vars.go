@@ -10,6 +10,28 @@ import (
 	encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
 
+// init initializes package variables and constants.
+func init() {
+	// Flip the byte order for BitMessage, which is different than BitCoin.
+	encVarint.ByteOrder = binary.BigEndian
+	buf := new(bytes.Buffer)
+	// Don't attract attention to this client just yet, use the vanilla client
+	// user agent.
+	// encVarstring.WriteVarString(userAgent, "/bitz:1/")
+	encVarstring.WriteVarString(buf, "/PyBitmessage:0.2.8/")
+	userAgent = buf.Bytes()
+
+	buf = new(bytes.Buffer)
+	putVarIntList(buf, []uint64{streamOne})
+	streamNumbers = buf.Bytes()
+
+	// TODO: rotate the nonce numbers.
+	err := binary.Read(rand.Reader, binary.LittleEndian, &nonce)
+	if err != nil {
+		nonce = uint64(time.Now().UnixNano())
+	}
+}
+
 const (
 	protocolVersion = 2
 	streamOne       = 1
@@ -58,25 +80,3 @@ var (
 		// {"192.168.11.8", "8444"},
 	}
 )
-
-// init initializes package variables and constants.
-func init() {
-	// Flip the byte order for BitMessage, which is different than BitCoin.
-	encVarint.ByteOrder = binary.BigEndian
-	buf := new(bytes.Buffer)
-	// Don't attract attention to this client just yet, use the vanilla client
-	// user agent.
-	// encVarstring.WriteVarString(userAgent, "/bitz:1/")
-	encVarstring.WriteVarString(buf, "/PyBitmessage:0.2.8/")
-	userAgent = buf.Bytes()
-
-	buf = new(bytes.Buffer)
-	putVarIntList(buf, []uint64{streamOne})
-	streamNumbers = buf.Bytes()
-
-	// TODO: rotate the nonce numbers.
-	err := binary.Read(rand.Reader, binary.LittleEndian, &nonce)
-	if err != nil {
-		nonce = uint64(time.Now().UnixNano())
-	}
-}

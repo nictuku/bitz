@@ -64,9 +64,8 @@ func (n *Node) Run() {
 	}
 	go listen(listener.(*net.TCPListener), n.resp)
 	n.bootstrap()
-	// TODO: do this less frequently.
 	// TODO: add signal handler for saving on exit.
-	saveTick := time.Tick(time.Second * 1)
+	saveTick := time.Tick(time.Minute * 1)
 	for {
 		select {
 		case addrs := <-n.resp.addrsChan:
@@ -118,7 +117,7 @@ func (n *Node) Run() {
 			log.Printf("received message content: len=%d, content=%q \n====\n%x", len(msg.Encrypted), msg.Encrypted, msg.Encrypted)
 			log.Fatalln("done")
 		case <-saveTick:
-			n.cfg.save(n.connectedNodes)
+			n.cfg.save(n.connectedNodes, n.unreachableNodes)
 		}
 	}
 }
@@ -280,6 +279,31 @@ func handleMsg(conn io.Writer, p *peerState, payload io.Reader, mChan chan msg) 
 	return nil
 }
 
+type stats struct {
+	streamConnectionCount map[int]int
+}
+
+// ipPort is a string that can be resolved with net.ResolveTCPAddr("tcp",
+// ipPort) and the first part can be parsed by net.ParseIP(). It is illegal to
+// create an ipPort that doesn't follow these conditions.
+type ipPort string
+
+func (ipPort ipPort) toNetworkAddress() extendedNetworkAddress {
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", string(ipPort))
+	var rawIp [16]byte
+	copy(rawIp[:], tcpAddr.IP)
+	addr := extendedNetworkAddress{
+		Time:   uint64(time.Now().Unix()),
+		Stream: streamOne, // This should change after the version exchange.
+		NetworkAddress: NetworkAddress{
+			Services: ConnectionServiceNodeNetwork, //
+			IP:       rawIp,
+			Port:     uint16(tcpAddr.Port),
+		},
+	}
+	return addr
+}
+
 // Things needing implementation.
 //
 // - save the config frequently. be more resilient to BitMessage attacks.
@@ -309,28 +333,3 @@ func handleMsg(conn io.Writer, p *peerState, payload io.Reader, mChan chan msg) 
 // #will exist and will collectively create 8 connections with peers.
 //
 // Random nonce used to detect connections to self.
-
-type stats struct {
-	streamConnectionCount map[int]int
-}
-
-// ipPort is a string that can be resolved with net.ResolveTCPAddr("tcp",
-// ipPort) and the first part can be parsed by net.ParseIP(). It is illegal to
-// create an ipPort that doesn't follow these conditions.
-type ipPort string
-
-func (ipPort ipPort) toNetworkAddress() extendedNetworkAddress {
-	tcpAddr, _ := net.ResolveTCPAddr("tcp", string(ipPort))
-	var rawIp [16]byte
-	copy(rawIp[:], tcpAddr.IP)
-	addr := extendedNetworkAddress{
-		Time:   uint64(time.Now().Unix()),
-		Stream: streamOne, // This should change after the version exchange.
-		NetworkAddress: NetworkAddress{
-			Services: ConnectionServiceNodeNetwork, //
-			IP:       rawIp,
-			Port:     uint16(tcpAddr.Port),
-		},
-	}
-	return addr
-}
