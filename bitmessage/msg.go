@@ -12,7 +12,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
+	//"math"
+	"math/big"
 	"net"
 	"strings"
 
@@ -257,6 +258,19 @@ type msg struct {
 	Encrypted    []byte  // Encrypted data. See also: UnencryptedMessageData
 }
 
+func writeMsg(w io.Writer, m msg) error {
+	// TODO performance: pre-allocate byte slices, share between instances.
+	buf := new(bytes.Buffer)
+	putBytes(buf, m.PowNonce[:])
+	putUint32(buf, uint32(m.Time)) // XXX moving to uint64 soon.
+	encVarint.WriteVarInt(buf, m.StreamNumber)
+	putBytes(buf, m.Encrypted)
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Println("writeMessage write failed: ", err)
+	}
+	return nil
+}
+
 type Broadcast struct {
 	// Random nonce used for the Proof Of Work
 	powNonce uint64
@@ -395,7 +409,7 @@ func readNetworkAddressList(r io.Reader) ([]extendedNetworkAddress, error) {
 	return addrs, nil
 }
 
-func ProofOfWork(msg []byte) ([]byte, error) {
+func offProofOfWork(msg []byte) ([]byte, error) {
 	for i := 0; i < 2; i++ {
 		h := sha512.New()
 		h.Write(msg)
@@ -404,20 +418,85 @@ func ProofOfWork(msg []byte) ([]byte, error) {
 	return msg, nil
 }
 
-var n2to64 = uint64(math.Pow(2, 64))
+// Use fmt.Sscan instead.
+var n2to64 = big.NewInt(0).Exp(big.NewInt(2), big.NewInt(64), nil)
+var n1 = new(big.Int).Exp(big.NewInt(10), big.NewInt(20), nil)
+
+// 99999999999999999999
+// 10000000000000000000
+var initialTrial = new(big.Int).Sub(n1, big.NewInt(1))
+
+func ProofOfWork(data []byte) (nonceByte [8]byte, err error) {
+	if len(data) == 0 {
+		return [8]byte{}, fmt.Errorf("ProofOfWork received empty data.")
+	}
+	fmt.Printf("initial trial %v\n", initialTrial.String())
+
+	target := new(big.Int).Div(n2to64, big.NewInt(int64((len(data)+payloadLengthExtraBytes+8)*averageProofOfWorkNonceTrialsPerByte)))
+	fmt.Printf("target: %v, n2to64 %v\n", n2to64, target)
+	if target.Cmp(new(big.Int)) == 0 { // target == 0
+		return [8]byte{}, fmt.Errorf("error calculating target")
+	}
+
+	//18446744073709551615
+	//9223372036854775807
+	trialValue := new(big.Int).Set(initialTrial)
+
+	initialHash := sha512.New()
+	initialHash.Write(data)
+	nonce := big.NewInt(1).SetBytes([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x6b, 0x29})
+	//b := make([]byte, 8)
+	fmt.Printf("cmp %v\n", trialValue.Cmp(target))
+	one := big.NewInt(1)
+	i := 0
+	var b []byte
+	for trialValue.Cmp(target) == 1 {
+		// Is there an easier way to do []byte{...}++ ?
+		// Use 8 byte slice.
+		b = nonce.Bytes()
+		b = append(make([]byte, 8-len(b)), b...)
+		fmt.Printf("--\nusing nonce %x\n", b)
+		x := append(b, initialHash.Sum(nil)...)
+		fmt.Printf("calculating hash of %x\n", x)
+		resultHash := sha512.New()
+		resultHash.Write(x)
+		fmt.Printf("resulting hash: %x\n", resultHash.Sum(nil))
+		second := sha512.New()
+		second.Write(resultHash.Sum(nil))
+		fmt.Printf("second hash: %x\n", second.Sum(nil))
+
+		// SetBytes already takes bigendian encoding.
+		trialValue.SetBytes(second.Sum(nil)[0:8])
+		fmt.Printf("trialValue bytes: %x", trialValue.Bytes())
+		fmt.Printf("cmp(%v,%v)==%v\n", trialValue, target, trialValue.Cmp(target))
+		if i > 5 {
+			break
+		}
+		i++
+
+		nonce.Add(nonce, one)
+	}
+	fmt.Printf("cmp(%v,%v)==%v\n", trialValue, target, trialValue.Cmp(target))
+
+	copy(nonceByte[:], b)
+	return nonceByte, nil
+}
 
 func checkProofOfWork(data []byte, nonce [8]byte) error {
 	// From: https://bitmessage.org/wiki/Proof_of_work
-	// Not sure if this is correct. 
-	// TODO: Add tests when I have good test cases.
 
-	initialHash := sha512.New().Sum(data)
+	// XXX use big/math.
 
-	second := sha512.New().Sum(append(nonce[:], initialHash...))
-	resultHash := sha512.New().Sum(second)
+	initialHash := sha512.New()
+	initialHash.Write(data)
 
-	POWValue := binary.BigEndian.Uint64(resultHash[0:8])
-	target := n2to64 / uint64((len(data)+payloadLengthExtraBytes)*averageProofOfWorkNonceTrialsPerByte)
+	second := sha512.New()
+	second.Write(append(nonce[:], initialHash.Sum(nil)...))
+	resultHash := sha512.New()
+	resultHash.Write(second.Sum(nil))
+
+	POWValue := binary.BigEndian.Uint64(resultHash.Sum(nil)[0:8])
+	target := uint64(n2to64.Int64()) / uint64((len(data)+payloadLengthExtraBytes)*averageProofOfWorkNonceTrialsPerByte)
 	if target <= POWValue {
 		return nil
 	}

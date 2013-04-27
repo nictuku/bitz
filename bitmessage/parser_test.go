@@ -161,3 +161,26 @@ func TestParseMsg(t *testing.T) {
 		t.Errorf("got %+q, wanted %+q", m, want)
 	}
 }
+
+func TestPow(t *testing.T) {
+	want := msg{
+		PowNonce:     [8]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x6b, 0x2a},
+		Time:         1366969543,
+		StreamNumber: 1,
+		Encrypted: []byte{
+			0x1f, 0x54, 0x9c, 0x27, 0x5e, 0x23, 0x96, 0x2c,
+			0x61, 0x09, 0xc0, 0xfb, 0xdb, 0x45, 0x4b, 0x7d,
+			0x63, 0xe9, 0x77, 0xa0, 0x3b, 0xaa, 0x8a, 0x67,
+			0x34, 0x8a, 0xa4, 0x9c, 0x09, 0xa1, 0xc7, 0xcb,
+		},
+	}
+	buf := new(bytes.Buffer)
+	writeMsg(buf, want)
+	nonce, err := ProofOfWork(buf.Bytes()[8:])
+	if err != nil {
+		t.Fatalf("ProofOfWork: %v", err)
+	}
+	if !bytes.Equal(nonce[:], want.PowNonce[:]) {
+		t.Fatalf("ProofOfWork produced unexpected result: wanted %x, got %x", want.PowNonce, nonce)
+	}
+}
