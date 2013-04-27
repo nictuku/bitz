@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	protocolVersion = 1
+	protocolVersion = 2
 	streamOne       = 1
 	// Using same value from PyBitmessage, which was originally added to avoid memory blowups.
 	// The protocol itself doesn't restrict it. This should certainly be removed
