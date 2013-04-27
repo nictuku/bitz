@@ -1,5 +1,10 @@
 package bitmessage
 
+import (
+	"encoding/gob"
+	"io"
+)
+
 // Object store.
 
 // TODO: Move to a map of hashes to identifiers instead of ipPort.
@@ -7,7 +12,6 @@ package bitmessage
 type objectsInventory map[[32]byte]map[ipPort]struct{}
 
 func (inv objectsInventory) add(h [32]byte, addr ipPort) {
-	// TODO: Move to a list of nodes instead of just one.
 	_, ok := inv[h]
 	if !ok {
 		inv[h] = make(map[ipPort]struct{})
@@ -26,4 +30,14 @@ func (inv objectsInventory) merge(inv2 objectsInventory) {
 			inv[h][ipPort] = struct{}{}
 		}
 	}
+}
+
+func (inv objectsInventory) save(w io.Writer) error {
+	g := gob.NewEncoder(w)
+	return g.Encode(inv)
+}
+
+func (inv objectsInventory) load(r io.Reader) error {
+	g := gob.NewDecoder(r)
+	return g.Decode(&inv)
 }

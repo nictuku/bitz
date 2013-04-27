@@ -3,6 +3,7 @@ package bitmessage
 // This file implements the main engine for this BitMessage node.
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -117,7 +118,13 @@ func (n *Node) Run() {
 			log.Printf("received message content: len=%d, content=%q \n====\n%x", len(msg.Encrypted), msg.Encrypted, msg.Encrypted)
 			log.Fatalln("done")
 		case <-saveTick:
-			n.cfg.save(n.connectedNodes, n.unreachableNodes)
+			// XXX Save on file in disk instead. See config.go.
+			buf := new(bytes.Buffer)
+			if err := n.objects.save(buf); err != nil {
+				log.Printf("n.objects.save: %v", err)
+			}
+
+			n.cfg.save(n.connectedNodes)
 		}
 	}
 }
