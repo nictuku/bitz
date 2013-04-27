@@ -174,7 +174,10 @@ func handleConn(conn *net.TCPConn, resp responses) {
 		case "msg":
 			err = handleMsg(conn, p, payload, resp.msgChan)
 		default:
+			// XXX
 			err = fmt.Errorf("ignoring unknown command %q", command)
+			log.Println(err.Error())
+			err = nil
 		}
 		if err != nil {
 			log.Printf("error while processing command %v: %v", command, err)
@@ -321,7 +324,7 @@ func (ipPort ipPort) toNetworkAddress() extendedNetworkAddress {
 	var rawIp [16]byte
 	copy(rawIp[:], tcpAddr.IP)
 	addr := extendedNetworkAddress{
-		Time:   uint32(time.Now().Unix()),
+		Time:   uint64(time.Now().Unix()),
 		Stream: streamOne, // This should change after the version exchange.
 		NetworkAddress: NetworkAddress{
 			Services: ConnectionServiceNodeNetwork, //

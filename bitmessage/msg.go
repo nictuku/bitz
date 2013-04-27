@@ -86,7 +86,7 @@ func (addr NetworkAddress) ipPort() ipPort {
 
 type extendedNetworkAddress struct {
 	// Last received message from this node.
-	Time uint32
+	Time uint64
 	// Stream number for this node.
 	Stream uint32
 	NetworkAddress
@@ -228,7 +228,7 @@ type versionMessage struct {
 // public key itself, it must send out a request for the public key.
 type GetPubKey struct {
 	powNonce       uint64   // Random nonce used for the Proof Of Work
-	time           uint32   // The time that this message was generated and broadcast.
+	time           uint64   // The time that this message was generated and broadcast.
 	addressVersion varint   // The address' version.
 	streamNumber   varint   // The address' stream number
 	pubKeyHash     [20]byte // The ripemd hash of the public key
@@ -237,7 +237,7 @@ type GetPubKey struct {
 // A public key.
 type PubKey struct {
 	powNonce       uint64 // Random nonce used for the Proof Of Work
-	time           uint32 // The time that this message was generated and broadcast.
+	time           uint64 // The time that this message was generated and broadcast.
 	addressVersion varint // The address' version.
 	streamNumber   varint // The address' stream number
 	behavior       uint32 // A bitfield of optional behaviors and features that can be expected from the node receiving the message.
@@ -251,11 +251,10 @@ type PubKey struct {
 
 // Used for person-to-person messages.
 type msg struct {
-	PowNonce       [8]byte // Random nonce used for the Proof Of Work
-	Time           uint32  // The time that this message was generated and broadcast.
-	AddressVersion uint64  // varint, the address' version.
-	StreamNumber   uint64  // varint, the address' stream number
-	Encrypted      []byte  // Encrypted data. See also: UnencryptedMessageData
+	PowNonce     [8]byte // Random nonce used for the Proof Of Work
+	Time         uint64  // The time that this message was generated and broadcast. V1 used uint32.
+	StreamNumber uint64  // varint, the address' stream number
+	Encrypted    []byte  // Encrypted data. See also: UnencryptedMessageData
 }
 
 type Broadcast struct {
@@ -340,11 +339,6 @@ func putVarIntList(w io.Writer, x []uint64) {
 			log.Println("putVarIntList:", err.Error())
 		}
 	}
-}
-
-func readBytes(r io.Reader) (b []byte) {
-	check(binary.Read(r, binary.BigEndian, b))
-	return b
 }
 
 func readInt32(r io.Reader) (x int32) {
