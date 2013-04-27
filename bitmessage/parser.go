@@ -141,16 +141,21 @@ func parseInv(r io.Reader) ([]inventoryVector, error) {
 func parseMsg(r io.Reader) (m msg, err error) {
 	m.PowNonce = readBytes8(r)
 	// TODO:
-	//if err := checkProofOfWork(r, m.PowNonce); err != nil {
-	//	return m, err
-	//}
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, r); err != nil {
+		return m, err
+	}
+	r = buf
+	if err := checkProofOfWork(buf.Bytes(), m.PowNonce); err != nil {
+		return m, err
+	}
 	// TODO: Soon moving to uint32 in the wire.
 	m.Time = uint64(readUint32(r))
 	m.StreamNumber, _, err = encVarint.ReadVarInt(r)
 	if err != nil {
 		return m, fmt.Errorf("parseMsg reading Stream Number: %v\n", err)
 	}
-	buf := new(bytes.Buffer)
+	buf = new(bytes.Buffer)
 	if n, err := io.Copy(buf, r); err != nil {
 		return m, err
 	} else if n == 0 {

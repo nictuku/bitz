@@ -5,17 +5,17 @@ import (
 	"testing"
 )
 
-func TestProofOfWork(t *testing.T) {
+func TestDoubleHash(t *testing.T) {
 	// Values picked from the protocol specification hash examples:
 	// https://bitmessage.org/wiki/Protocol_specification
 	msg := []byte("hello")
-	rcv, err := ProofOfWork(msg)
+	rcv, err := offProofOfWork(msg)
 	if err != nil {
-		t.Fatalf("ProofOfWork error: %v", err.Error())
+		t.Fatalf("doubleHash error: %v", err.Error())
 	}
 
 	if fmt.Sprintf("%x", rcv) != "0592a10584ffabf96539f3d780d776828c67da1ab5b169e9e8aed838aaecc9ed36d49ff1423c55f019e050c66c6324f53588be88894fef4dcffdb74b98e2b200" {
-		t.Fatalf("ProofOfWork mismatch, got %x", rcv)
+		t.Fatalf("doubleHash mismatch, got %x", rcv)
 	}
 }
 
