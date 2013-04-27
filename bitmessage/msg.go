@@ -24,6 +24,15 @@ import (
 func init() {
 	// Flip the byte order for BitMessage, which is different than BitCoin.
 	encVarint.ByteOrder = binary.BigEndian
+
+	n2to64 = new(big.Int)
+	if _, err := fmt.Sscan("18446744073709551617", n2to64); err != nil {
+		log.Panicf("error scanning math.Big value n2to64:", err)
+	}
+	initialTrial = new(big.Int)
+	if _, err := fmt.Sscan("99999999999999999999", initialTrial); err != nil {
+		log.Panicf("error scanning math.Big value initialTrial:", err)
+	}
 }
 
 func writeMessage(w io.Writer, command string, payload []byte) {
@@ -409,7 +418,7 @@ func readNetworkAddressList(r io.Reader) ([]extendedNetworkAddress, error) {
 	return addrs, nil
 }
 
-func offProofOfWork(msg []byte) ([]byte, error) {
+func doubleHash(msg []byte) ([]byte, error) {
 	for i := 0; i < 2; i++ {
 		h := sha512.New()
 		h.Write(msg)
@@ -418,86 +427,71 @@ func offProofOfWork(msg []byte) ([]byte, error) {
 	return msg, nil
 }
 
-// Use fmt.Sscan instead.
-var n2to64 = big.NewInt(0).Exp(big.NewInt(2), big.NewInt(64), nil)
-var n1 = new(big.Int).Exp(big.NewInt(10), big.NewInt(20), nil)
+// These values are filled in by init. They can't be represented using uint64.
+var n2to64 *big.Int       // 18446744073709551616
+var initialTrial *big.Int // 99999999999999999999
 
-// 99999999999999999999
-// 10000000000000000000
-var initialTrial = new(big.Int).Sub(n1, big.NewInt(1))
-
-func ProofOfWork(data []byte) (nonceByte [8]byte, err error) {
+// ProofOfWork goes through several iterations to find a nonce number that,
+// when hashed with the payload data, produces a certain target result. The
+// only way to find such a nonce is by bruteforce. The goal is to ensure that
+// each participant of the network can only send a limited number of messages
+// per hour, since they need computational power to do so. See the wikipedia
+// article for Hashcash, that inspired Bitcoin's mechanism and Bitmessage's.
+// The BitMessage implementation is documented at
+// https://bitmessage.org/wiki/Proof_of_work. Note that the difficulty of the
+// calculation is proportional to the size of the payload.
+func ProofOfWork(data []byte, initialNonce []byte) (nonceByte [8]byte, err error) {
 	if len(data) == 0 {
-		return [8]byte{}, fmt.Errorf("ProofOfWork received empty data.")
+		return nonceByte, fmt.Errorf("ProofOfWork received empty data.")
 	}
-	fmt.Printf("initial trial %v\n", initialTrial.String())
-
 	target := new(big.Int).Div(n2to64, big.NewInt(int64((len(data)+payloadLengthExtraBytes+8)*averageProofOfWorkNonceTrialsPerByte)))
-	fmt.Printf("target: %v, n2to64 %v\n", n2to64, target)
 	if target.Cmp(new(big.Int)) == 0 { // target == 0
-		return [8]byte{}, fmt.Errorf("error calculating target")
+		return nonceByte, fmt.Errorf("error calculating target")
 	}
-
-	//18446744073709551615
-	//9223372036854775807
+	// Copies initialTrial to trialValue.
 	trialValue := new(big.Int).Set(initialTrial)
 
 	initialHash := sha512.New()
 	initialHash.Write(data)
-	nonce := big.NewInt(1).SetBytes([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x6b, 0x29})
-	//b := make([]byte, 8)
-	fmt.Printf("cmp %v\n", trialValue.Cmp(target))
-	one := big.NewInt(1)
-	i := 0
-	var b []byte
+
+	nonce := big.NewInt(1)
+	if initialNonce != nil {
+		// Used for testing.
+		nonce.SetBytes(initialNonce[:8])
+	}
+	var (
+		one = big.NewInt(1)
+		b   = make([]byte, 8)
+		h   []byte
+	)
+	// while trialValue > target:
 	for trialValue.Cmp(target) == 1 {
-		// Is there an easier way to do []byte{...}++ ?
-		// Use 8 byte slice.
-		b = nonce.Bytes()
-		b = append(make([]byte, 8-len(b)), b...)
-		fmt.Printf("--\nusing nonce %x\n", b)
-		x := append(b, initialHash.Sum(nil)...)
-		fmt.Printf("calculating hash of %x\n", x)
-		resultHash := sha512.New()
-		resultHash.Write(x)
-		fmt.Printf("resulting hash: %x\n", resultHash.Sum(nil))
-		second := sha512.New()
-		second.Write(resultHash.Sum(nil))
-		fmt.Printf("second hash: %x\n", second.Sum(nil))
-
-		// SetBytes already takes bigendian encoding.
-		trialValue.SetBytes(second.Sum(nil)[0:8])
-		fmt.Printf("trialValue bytes: %x", trialValue.Bytes())
-		fmt.Printf("cmp(%v,%v)==%v\n", trialValue, target, trialValue.Cmp(target))
-		if i > 5 {
-			break
-		}
-		i++
-
+		// 8 byte slice of nonce.Bytes() prefixed with zeroes. Avoid an extra
+		// allocation by reusing the slice. Since the nonce always increases,
+		// the prefix bytes are guaranteed to be zero.
+		b = append(b[0:8-len(nonce.Bytes())], nonce.Bytes()...)
+		h, err = doubleHash(append(b, initialHash.Sum(nil)...))
+		trialValue.SetBytes(h[0:8])
 		nonce.Add(nonce, one)
 	}
-	fmt.Printf("cmp(%v,%v)==%v\n", trialValue, target, trialValue.Cmp(target))
-
 	copy(nonceByte[:], b)
 	return nonceByte, nil
 }
 
 func checkProofOfWork(data []byte, nonce [8]byte) error {
 	// From: https://bitmessage.org/wiki/Proof_of_work
-
-	// XXX use big/math.
-
 	initialHash := sha512.New()
 	initialHash.Write(data)
 
-	second := sha512.New()
-	second.Write(append(nonce[:], initialHash.Sum(nil)...))
-	resultHash := sha512.New()
-	resultHash.Write(second.Sum(nil))
+	h, err := doubleHash(append(nonce[:], initialHash.Sum(nil)...))
+	if err != nil {
+		return err
+	}
 
-	POWValue := binary.BigEndian.Uint64(resultHash.Sum(nil)[0:8])
-	target := uint64(n2to64.Int64()) / uint64((len(data)+payloadLengthExtraBytes)*averageProofOfWorkNonceTrialsPerByte)
-	if target <= POWValue {
+	POWValue := new(big.Int).SetBytes(h[0:8])
+	target := new(big.Int).Div(n2to64, big.NewInt(int64((len(data)+payloadLengthExtraBytes)*averageProofOfWorkNonceTrialsPerByte)))
+	// POWValue >= target:
+	if POWValue.Cmp(target) != 1 {
 		return nil
 	}
 	return fmt.Errorf("checkProofOfWork did not pass")

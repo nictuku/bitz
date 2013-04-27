@@ -176,7 +176,8 @@ func TestPow(t *testing.T) {
 	}
 	buf := new(bytes.Buffer)
 	writeMsg(buf, want)
-	nonce, err := ProofOfWork(buf.Bytes()[8:])
+	initialNonce := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x6b, 0x24} // the target nonce is 5 positions ahead.
+	nonce, err := ProofOfWork(buf.Bytes()[8:], initialNonce)
 	if err != nil {
 		t.Fatalf("ProofOfWork: %v", err)
 	}
