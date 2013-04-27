@@ -12,13 +12,13 @@ import (
 	"fmt"
 	"io"
 	"log"
-	//"math"
 	"math/big"
 	"net"
 	"strings"
 
 	"code.google.com/p/go.crypto/ripemd160"
 	encVarint "github.com/nictuku/guardian/encoding/varint"
+	encVarstring "github.com/spearson78/guardian/encoding/varstring"
 )
 
 func init() {
@@ -55,6 +55,102 @@ func writeMessage(w io.Writer, command string, payload []byte) {
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		log.Println("writeMessage write failed: ", err)
 	}
+}
+
+type parserState struct {
+	magicPos      int // if == 4 means all magic bytes have been found and is ready to read data.
+	pos           int
+	payloadLength int
+	command       string
+	checksum      uint32
+}
+
+// readMessage parses a BitMessage message in the protocol-defined format and
+// outputs the name of the command in the message, plus the payload content.
+// It verifies that the content matches the checksum in the message header and
+// throws an error otherwise.
+func readMessage(r io.Reader) (command string, buf io.Reader, err error) {
+	b := make([]byte, 20)
+	p := parserState{}
+
+	data := new(bytes.Buffer)
+
+	// The first bytes aren't necessarily the beginning of a message, because
+	// the TCP stream can be in an unknown state - in case there is a bug in
+	// the network parser for example.
+	// Find the beginning of the message, marked by magic bytes.
+
+	for {
+		var n int
+		// Read at least 20 bytes because it's useless to proceed without
+		// knowing the payload length. If the remote server doesn't give the
+		// data this will block. In the common case, 'r' is a net.Conn with a
+		// deadline set, so it shouldn't be a problem.
+
+		n, err = io.ReadAtLeast(r, b, 20)
+		for p.pos = 0; p.pos < n && p.magicPos != 4; p.pos++ {
+			if b[p.pos] == magicHeaderSlice[p.magicPos] {
+				p.magicPos += 1
+			} else {
+				p.magicPos = 0
+			}
+		}
+		if p.magicPos == 4 {
+			if len(b) > p.pos {
+				// Save the extra bytes that were read unnecessarily.
+				data.Write(b[p.pos:n])
+			}
+			break
+		}
+	}
+	// Read the message header, including the checksum. The header's length is 20 bytes at least.
+	missingData := 20 - data.Len()
+	if _, err = io.CopyN(data, r, int64(missingData)); err != nil {
+		return "", nil, fmt.Errorf("readMessage: error reading header: %v", err.Error())
+	}
+	if err := parseHeaderFields(&p, data); err != nil {
+		return p.command, nil, fmt.Errorf("readMessage: %v", err.Error())
+	}
+	// TODO performance: depending on the command type, pipe directly do disk
+	// instead of keeping all in memory?
+	//
+	// TODO performance: keep an arena of reusable byte slices.
+
+	// There might be still some bytes left in 'data'. Calculate how much we
+	// still have to read now.
+	missingData = p.payloadLength - data.Len()
+	// Copy the remaining bytes from reader to 'data'.
+	if _, err := io.CopyN(data, r, int64(missingData)); err != nil && err != io.EOF {
+		return p.command, nil, err
+	}
+	if data.Len() != p.payloadLength {
+		return p.command, nil, fmt.Errorf("readMessage: stream ended before we could get the payload data, wanted length %d, got %d", p.payloadLength, data.Len())
+	}
+	if checksum := sha512HashPrefix(data.Bytes()); p.checksum != checksum {
+		return p.command, nil, fmt.Errorf("readMessage: checksum mismatch: message advertised %x, calculated %x", p.checksum, checksum)
+	}
+	return p.command, data, nil
+}
+
+func parseHeaderFields(p *parserState, data io.Reader) (err error) {
+	if p.command, err = parseCommand(data); err != nil {
+		return fmt.Errorf("headerFields: %v", err.Error())
+	}
+	p.payloadLength = int(readUint32(data))
+	if p.payloadLength > maxPayloadLength {
+		return fmt.Errorf("headerFields: advertised payload length too large, aborting.")
+	}
+	p.checksum = readUint32(data)
+	return nil
+}
+
+func parseCommand(r io.Reader) (command string, err error) {
+	cmd := make([]byte, 12)
+	if _, err = io.ReadFull(r, cmd); err != nil {
+		return "", fmt.Errorf("parseCommand error: %v", err.Error())
+	}
+	cmd = bytes.TrimRight(cmd, "\x00")
+	return string(cmd), nil
 }
 
 // networkAddress produces a wire format Network Address packet. If addr is
@@ -102,6 +198,10 @@ type extendedNetworkAddress struct {
 	NetworkAddress
 }
 
+func parseAddr(r io.Reader) ([]extendedNetworkAddress, error) {
+	return readNetworkAddressList(r)
+}
+
 func parseIP(ip [16]byte) net.IP {
 	return net.IP(ip[0:len(ip)])
 }
@@ -125,6 +225,16 @@ func writeInventoryVector(w io.Writer, invs []inventoryVector) (err error) {
 	}
 	_, err = w.Write(buf.Bytes())
 	return err
+}
+
+func parseInv(r io.Reader) ([]inventoryVector, error) {
+	count, _, err := encVarint.ReadVarInt(r)
+	if err != nil {
+		return nil, err
+	}
+	ivs := make([]inventoryVector, count)
+	err = binary.Read(r, binary.BigEndian, ivs)
+	return ivs, err
 }
 
 // Use varint and varstring from:
@@ -227,6 +337,18 @@ type versionMessage struct {
 	streamNumbers []uint64
 }
 
+func parseVersion(r io.Reader) (versionMessage, error) {
+	v := &binaryVersionMessage{}
+	check(binary.Read(r, binary.BigEndian, v))
+	fmt.Println("version", v.Version)
+	fmt.Println("addr recv", parseIP(v.AddrRecv.IP))
+
+	userAgent, _, _ := encVarstring.ReadVarString(r)
+	streams := readVarIntList(r)
+	version := versionMessage{*v, userAgent, streams}
+	return version, nil
+}
+
 // Objects:
 // Any object is also a message. The difference is, that an object should be
 // shared with the whole stream, while a normal message is just for direct
@@ -278,6 +400,33 @@ func writeMsg(w io.Writer, m msg) error {
 		log.Println("writeMessage write failed: ", err)
 	}
 	return nil
+}
+
+func parseMsg(r io.Reader) (m msg, err error) {
+	m.PowNonce = readBytes8(r)
+	// TODO:
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, r); err != nil {
+		return m, err
+	}
+	r = buf
+	if err := checkProofOfWork(buf.Bytes(), m.PowNonce); err != nil {
+		return m, err
+	}
+	// TODO: Soon moving to uint32 in the wire.
+	m.Time = uint64(readUint32(r))
+	m.StreamNumber, _, err = encVarint.ReadVarInt(r)
+	if err != nil {
+		return m, fmt.Errorf("parseMsg reading Stream Number: %v\n", err)
+	}
+	buf = new(bytes.Buffer)
+	if n, err := io.Copy(buf, r); err != nil {
+		return m, err
+	} else if n == 0 {
+		return m, fmt.Errorf("parseMsg Encrypted content empty")
+	}
+	m.Encrypted = buf.Bytes()
+	return m, nil
 }
 
 type Broadcast struct {
@@ -425,6 +574,15 @@ func doubleHash(msg []byte) ([]byte, error) {
 		msg = h.Sum(nil)
 	}
 	return msg, nil
+}
+
+// sha512HashPrefix returns the first 4 bytes of the SHA-512 hash of b.
+func sha512HashPrefix(b []byte) (x uint32) {
+	s := sha512.New()
+	s.Write(b)
+	r := bytes.NewBuffer(s.Sum(nil)[0:4])
+	binary.Read(r, binary.BigEndian, &x)
+	return x
 }
 
 // These values are filled in by init. They can't be represented using uint64.
