@@ -9,7 +9,7 @@ func TestDoubleHash(t *testing.T) {
 	// Values picked from the protocol specification hash examples:
 	// https://bitmessage.org/wiki/Protocol_specification
 	msg := []byte("hello")
-	rcv, err := offProofOfWork(msg)
+	rcv, err := doubleHash(msg)
 	if err != nil {
 		t.Fatalf("doubleHash error: %v", err.Error())
 	}
