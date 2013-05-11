@@ -21,7 +21,8 @@ type Node struct {
 	// Stats. All access must be synchronized because it's often used by other
 	// goroutines (UI).
 	stats stats
-	resp  responses
+	// resp contains channels for receiving parsed data from remote nodes.
+	resp responses
 	// connectedNodes are all nodes we have a connection established to, for
 	// each stream.
 	connectedNodes streamNodes
@@ -29,19 +30,12 @@ type Node struct {
 	// TODO: Rotate the filters and expire them.
 	// TODO: Save it on disk.
 	unreachableNodes *bloom.Filter
-	// connectedNodes are all nodes we know of for each stream number in
+	// knownNodes are all nodes we know of for each stream number in
 	// addition to the connectedNodes.
 	knownNodes streamNodes
-	objects    objectsInventory
-}
-
-type responses struct {
-	addrsChan     chan []extendedNetworkAddress
-	addNodeChan   chan extendedNetworkAddress
-	delNodeChan   chan extendedNetworkAddress
-	invChan       chan objectsInventory
-	msgChan       chan msg
-	broadcastChan chan broadcast
+	// objects provides information about which nodes holds each object.
+	// XXX this should be renamed to objectLocations or so. 
+	objects objectsInventory
 }
 
 func (n *Node) Run() {
@@ -57,14 +51,7 @@ func (n *Node) Run() {
 		log.Fatal(err)
 	}
 	log.Println("Listening at", listener.Addr())
-	n.resp = responses{
-		make(chan []extendedNetworkAddress),
-		make(chan extendedNetworkAddress),
-		make(chan extendedNetworkAddress),
-		make(chan objectsInventory),
-		make(chan msg),
-		make(chan broadcast),
-	}
+	n.resp = newResponses()
 	go listen(listener.(*net.TCPListener), n.resp)
 	n.bootstrap()
 	// TODO: add signal handler for saving on exit.
@@ -132,6 +119,29 @@ func (n *Node) Run() {
 
 			n.cfg.save(n.connectedNodes)
 		}
+	}
+}
+
+// responses contains channels that are used by Node to receive data from the
+// network goroutines that are parsing the bitmessage protocol messages
+// from remote nodes.
+type responses struct {
+	addrsChan     chan []extendedNetworkAddress
+	addNodeChan   chan extendedNetworkAddress
+	delNodeChan   chan extendedNetworkAddress
+	invChan       chan objectsInventory
+	msgChan       chan msg
+	broadcastChan chan broadcast
+}
+
+func newResponses() responses {
+	return responses{
+		make(chan []extendedNetworkAddress),
+		make(chan extendedNetworkAddress),
+		make(chan extendedNetworkAddress),
+		make(chan objectsInventory),
+		make(chan msg),
+		make(chan broadcast),
 	}
 }
 

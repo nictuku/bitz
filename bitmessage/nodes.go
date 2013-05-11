@@ -18,7 +18,6 @@ type streamNodes map[int]nodeMap
 type nodeMap map[ipPort]remoteNode
 
 type remoteNode struct {
-	// TODO: get rid of this conn.
 	conn          net.Conn
 	lastContacted time.Time
 }
