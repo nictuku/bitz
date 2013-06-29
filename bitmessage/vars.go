@@ -25,7 +25,8 @@ func init() {
 	putVarIntList(buf, []uint64{streamOne})
 	streamNumbers = buf.Bytes()
 
-	// TODO: rotate the nonce numbers.
+	// TODO: rotate the nonce numbers. A package variable isn't a good place
+	// to keep this because it would be racy. Move it to the server.
 	err := binary.Read(rand.Reader, binary.LittleEndian, &nonce)
 	if err != nil {
 		nonce = uint64(time.Now().UnixNano())
