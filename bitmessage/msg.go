@@ -35,6 +35,9 @@ func init() {
 	}
 }
 
+// writeMessage encodes the payload and writes the provided message to w.
+// Command is one of the message types from the BitMessage protocol, like
+// "version", "verack", "addr" and "inv".
 func writeMessage(w io.Writer, command string, payload []byte) {
 	// TODO performance: pre-allocate byte slices, share between instances.
 	buf := new(bytes.Buffer)
