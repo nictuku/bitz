@@ -276,17 +276,6 @@ func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objects
 	objects := newObjInventory()
 	for _, inv := range invs {
 		objects.add(inv.Hash, p.ipPort)
-		// XXX Used during development. Obviously racy.
-		if i < 100 {
-			b, err := base58.BitcoinEncoding.Encode(inv.Hash[:])
-			if err != nil {
-				// XXX
-				log.Println("could not encode base58 %v: %v", inv.Hash, err)
-			}
-			log.Printf("requesting content: BM-%v", string(b))
-			writeGetData(conn, []inventoryVector{inv})
-		}
-		i++
 	}
 	obj <- objects
 	return nil
