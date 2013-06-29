@@ -9,35 +9,55 @@ import (
 // typed blobs.
 
 // ipPortSet holds unique ipPorts.
-type ipPortSet map[ipPort]struct{}
+type ipPortSet map[ipPort]bool
 
-// objectHash contains the first 4 bytes of the SHA-512 hash of the object.
-type objectHash [32]byte
+// objHash contains the first 4 bytes of the SHA-512 hash of the object.
+type objHash [32]byte
 
-// objectsInventory is a map that tells which ipPorts know about a particular
-// object, keyed by the objectHash.
-type objectsInventory map[objectHash]ipPortSet
-
-// adds updates the map to indicate that the provided addr knows about that
-// objectHash.
-func (inv objectsInventory) add(h objectHash, addr ipPort) {
-	_, ok := inv[h]
-	if !ok {
-		inv[h] = make(ipPortSet)
-	}
-	inv[h][addr] = struct{}{}
+func newobjInfo() *objInfo {
+	return &objInfo{make(ipPortSet)}
 }
 
-// merge adds all items from inv2 into inv. inv2 is not changed.
+type objInfo struct {
+	Nodes ipPortSet
+}
+
+func (i *objInfo) addNode(addr ipPort) {
+	i.Nodes[addr] = true
+}
+
+func newObjInventory() objectsInventory {
+	return objectsInventory{
+		make(map[objHash]*objInfo),
+		make(subscribers),
+	}
+}
+
+// objectsInventory knows which ipPorts know about a particular objHash.
+type objectsInventory struct {
+	M map[objHash]*objInfo
+}
+
+// adds indicates that the provided addr knows about that
+// objHash.
+func (inv objectsInventory) add(h objHash, addr ipPort) {
+	_, ok := inv.M[h]
+	if !ok {
+		inv.M[h] = newobjInfo()
+	}
+	inv.M[h].addNode(addr)
+}
+
+// merge adds all items from inv2 into inv. Subscribers are ignored.
 func (inv objectsInventory) merge(inv2 objectsInventory) {
-	// TODO: make it faster.
-	for h, m := range inv2 {
-		_, ok := inv[h]
+	for h, m := range inv2.M {
+		_, ok := inv.M[h]
 		if !ok {
-			inv[h] = make(ipPortSet)
+			inv.M[h] = m
+			continue
 		}
-		for ipPort, _ := range m {
-			inv[h][ipPort] = struct{}{}
+		for addr, _ := range m.Nodes {
+			inv.M[h].addNode(addr)
 		}
 	}
 }

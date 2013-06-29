@@ -56,7 +56,16 @@ func writeVerack(w io.Writer) {
 // func writeInv
 
 // getdata is used in response to an inv message to retrieve the content of a specific object after filtering known elements.
-// Payload (maximum payload length: 50000 entries):
+// Payload (maximum payload length: 50000 entries).
+//
+// Example:
+//	b, err := base58.BitcoinEncoding.Encode(inv.Hash[:])
+//	if err != nil {
+//		log.Println("could not encode base58 %v: %v", inv.Hash, err)
+//	}
+//	log.Printf("requesting content: BM-%v", string(b))
+//	writeGetData(conn, []inventoryVector{inv})
+
 func writeGetData(w io.Writer, invs []inventoryVector) {
 	buf := new(bytes.Buffer)
 	check(writeInventoryVector(buf, invs))

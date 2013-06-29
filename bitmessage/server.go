@@ -41,7 +41,7 @@ type Node struct {
 func (n *Node) Run() {
 	n.connectedNodes = make(streamNodes)
 	n.knownNodes = make(streamNodes)
-	n.objects = make(objectsInventory)
+	n.objects = newObjInventory()
 	n.unreachableNodes = bloom.New(10000, 0.01)
 
 	n.cfg = openConfig(PortNumber)
@@ -273,7 +273,7 @@ func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objects
 	if err != nil {
 		return fmt.Errorf("parseInv error: %v. Closing connection", err)
 	}
-	objects := make(objectsInventory)
+	objects := newObjInventory()
 	for _, inv := range invs {
 		objects.add(inv.Hash, p.ipPort)
 		// XXX Used during development. Obviously racy.

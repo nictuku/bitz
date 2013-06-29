@@ -7,7 +7,7 @@ import (
 )
 
 func TestSave(t *testing.T) {
-	objects := make(objectsInventory)
+	objects := newObjInventory()
 
 	a := [32]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31}
@@ -19,7 +19,7 @@ func TestSave(t *testing.T) {
 		t.Fatalf("object save error %v", err)
 	}
 
-	objectsNew := make(objectsInventory)
+	objectsNew := newObjInventory()
 	if err := objectsNew.load(buf); err != nil {
 		t.Fatalf("object load error %v", err)
 	}
