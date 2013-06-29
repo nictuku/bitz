@@ -29,7 +29,6 @@ func (i *objInfo) addNode(addr ipPort) {
 func newObjInventory() objectsInventory {
 	return objectsInventory{
 		make(map[objHash]*objInfo),
-		make(subscribers),
 	}
 }
 
@@ -48,7 +47,7 @@ func (inv objectsInventory) add(h objHash, addr ipPort) {
 	inv.M[h].addNode(addr)
 }
 
-// merge adds all items from inv2 into inv. Subscribers are ignored.
+// merge adds all items from inv2 into inv.
 func (inv objectsInventory) merge(inv2 objectsInventory) {
 	for h, m := range inv2.M {
 		_, ok := inv.M[h]

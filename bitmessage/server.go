@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/pmylund/go-bloom"
-	"github.com/spearson78/guardian/encoding/base58"
 )
 
 type Node struct {
