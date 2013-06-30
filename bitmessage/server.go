@@ -175,7 +175,7 @@ func handleConn(conn *net.TCPConn, resp responses) {
 	p.ipPort = ipPort(conn.RemoteAddr().String())
 	for {
 
-		conn.SetReadDeadline(time.Now().Add(connectionTimeout))
+		conn.SetDeadline(time.Now().Add(connectionTimeout))
 		command, payload, err := readMessage(conn)
 		if err != nil {
 			log.Println("handleConn:", err)

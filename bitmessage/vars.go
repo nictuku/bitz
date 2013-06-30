@@ -43,7 +43,7 @@ const (
 	prefix           = "bitmessage"
 
 	nodeConnectionRetryPeriod            = time.Minute * 30
-	connectionTimeout                    = time.Second * 30
+	connectionTimeout                    = time.Second * 10
 	numNodesForMainStream                = 15
 	maxInventoryEntries                  = 50000
 	payloadLengthExtraBytes              = 14000

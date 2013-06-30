@@ -93,7 +93,7 @@ func handshake(ipPort ipPort, node remoteNode, resp responses) {
 	node.lastContacted = time.Now()
 	if node.conn == nil {
 		var err error
-		if node.conn, err = net.Dial("tcp", string(ipPort)); err != nil {
+		if node.conn, err = net.DialTimeout("tcp", string(ipPort), connectionTimeout); err != nil {
 			log.Printf("error connecting to node %v: %v", ipPort, err)
 			resp.delNodeChan <- ipPort.toNetworkAddress()
 			return
