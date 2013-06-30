@@ -2,7 +2,12 @@ package bitmessage
 
 import (
 	"encoding/gob"
+	"fmt"
 	"io"
+	"log"
+	"strings"
+
+	"github.com/cznic/kv"
 )
 
 // This file implements storage for bitmessage objects, which are kept as un-
@@ -26,13 +31,58 @@ func (i *objInfo) addNode(addr ipPort) {
 	i.Nodes[addr] = true
 }
 
-func newObjInventory() objectsInventory {
-	return objectsInventory{
-		make(map[objHash]*objInfo),
+func createObjStore() (*objStore, error) {
+	db, err := kv.CreateMem(new(kv.Options))
+	if err != nil {
+		return nil, fmt.Errorf("createObjInventory failed to create a KV database: %v", err)
+	}
+	return &objStore{newObjInventory(), db}, nil
+}
+
+// objStore persists objects on disk and keeps track of metadata of each
+// object.
+type objStore struct {
+	inv *objectsInventory
+	db  *kv.DB
+}
+
+func (s *objStore) OffaddObjNode(h objHash, addr ipPort, conn io.Writer) {
+	s.inv.add(h, addr)
+	if s.shouldRetrieve(h) {
+		log.Println("retrieving %x [%v]", h, addr)
+		iv := inventoryVector{h}
+
+		writeGetData(conn, []inventoryVector{iv})
 	}
 }
 
-// objectsInventory knows which ipPorts know about a particular objHash.
+func (s *objStore) shouldRetrieve(h objHash) bool {
+	return strings.HasPrefix(fmt.Sprintf("%x", h), "3")
+}
+
+func (s *objStore) mergeInventory(inv2 objectsInventory, conn io.Writer) {
+	s.inv.merge(inv2)
+	for h, _ := range inv2.M {
+		if s.shouldRetrieve(h) {
+			log.Printf("==================== retrieving %x", h)
+			iv := inventoryVector{h}
+
+			writeGetData(conn, []inventoryVector{iv})
+		}
+	}
+}
+
+// invSource indicates a source that can receive writes requesting for a data.
+type nodeInv struct {
+	w   io.Writer
+	inv objectsInventory
+}
+
+func newObjInventory() *objectsInventory {
+	return &objectsInventory{make(map[objHash]*objInfo)}
+}
+
+// objectsInventory tracks metadata about a particular objHash.
 type objectsInventory struct {
 	M map[objHash]*objInfo
 }
@@ -56,10 +106,12 @@ func (inv objectsInventory) merge(inv2 objectsInventory) {
 			continue
 		}
 		for addr, _ := range m.Nodes {
-			inv.M[h].addNode(addr)
+			inv.add(h, addr)
 		}
 	}
 }
+
+// To be used for writing the inventory on kv?
 
 // save writes the contents of inv in gob format to w.
 func (inv objectsInventory) save(w io.Writer) error {

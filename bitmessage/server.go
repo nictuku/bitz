@@ -3,7 +3,6 @@ package bitmessage
 // This file implements the main engine for this BitMessage node.
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -33,15 +32,20 @@ type Node struct {
 	// addition to the connectedNodes.
 	knownNodes streamNodes
 	// objects provides information about which nodes holds each object.
-	// XXX this should be renamed to objectLocations or so. 
-	objects objectsInventory
+	// XXX this should be renamed to objectLocations or so.
+	objects *objStore
 }
 
 func (n *Node) Run() {
 	n.connectedNodes = make(streamNodes)
 	n.knownNodes = make(streamNodes)
-	n.objects = newObjInventory()
 	n.unreachableNodes = bloom.New(10000, 0.01)
+
+	var err error
+	n.objects, err = createObjStore()
+	if err != nil {
+		log.Fatalln("Node fatal error:", err)
+	}
 
 	n.cfg = openConfig(PortNumber)
 
@@ -53,7 +57,6 @@ func (n *Node) Run() {
 	n.resp = newResponses()
 	go listen(listener.(*net.TCPListener), n.resp)
 	n.bootstrap()
-	// TODO: add signal handler for saving on exit.
 	saveTick := time.Tick(time.Minute * 1)
 	for {
 		select {
@@ -99,8 +102,8 @@ func (n *Node) Run() {
 			n.unreachableNodes.Add(addr.IP[:])
 			// XXX if connection counter drops below numNodesforMainStream,
 			// get a node from knownNodes and promote it.
-		case obj := <-n.resp.invChan:
-			n.objects.merge(obj)
+		case i := <-n.resp.invChan:
+			n.objects.mergeInventory(i.inv, i.w)
 		case msg := <-n.resp.msgChan:
 			log.Printf("received message %+q", msg)
 			log.Printf("received message content: len=%d, content=%q \n====\n%x", len(msg.Encrypted), msg.Encrypted, msg.Encrypted)
@@ -110,12 +113,6 @@ func (n *Node) Run() {
 			log.Printf("received brodcast content: %v", string(broadcast.Message))
 			log.Fatalln("done")
 		case <-saveTick:
-			// XXX Save on file in disk instead. See config.go.
-			buf := new(bytes.Buffer)
-			if err := n.objects.save(buf); err != nil {
-				log.Printf("n.objects.save: %v", err)
-			}
-
 			n.cfg.save(n.connectedNodes)
 		}
 	}
@@ -128,7 +125,7 @@ type responses struct {
 	addrsChan     chan []extendedNetworkAddress
 	addNodeChan   chan extendedNetworkAddress
 	delNodeChan   chan extendedNetworkAddress
-	invChan       chan objectsInventory
+	invChan       chan nodeInv
 	msgChan       chan msg
 	broadcastChan chan broadcast
 }
@@ -138,7 +135,7 @@ func newResponses() responses {
 		make(chan []extendedNetworkAddress),
 		make(chan extendedNetworkAddress),
 		make(chan extendedNetworkAddress),
-		make(chan objectsInventory),
+		make(chan nodeInv),
 		make(chan msg),
 		make(chan broadcast),
 	}
@@ -264,7 +261,7 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 
 var i = 0
 
-func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objectsInventory) error {
+func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan nodeInv) error {
 	if !p.established {
 		return fmt.Errorf("version unknown. Closing connection")
 	}
@@ -272,15 +269,15 @@ func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan objects
 	if err != nil {
 		return fmt.Errorf("parseInv error: %v. Closing connection", err)
 	}
-	objects := newObjInventory()
+	nodeObjects := newObjInventory()
 	for _, inv := range invs {
-		objects.add(inv.Hash, p.ipPort)
+		nodeObjects.add(inv.Hash, p.ipPort)
 	}
-	obj <- objects
+	obj <- nodeInv{conn, *nodeObjects}
 	return nil
 }
 
-func handleMsg(conn io.Writer, p *peerState, payload io.Reader, mChan chan msg) error {
+func handleMsg(conn io.Writer, p *peerState, payload io.Reader, msgChan chan msg) error {
 	if !p.established {
 		return fmt.Errorf("version unknown. Closing connection")
 	}
@@ -288,7 +285,7 @@ func handleMsg(conn io.Writer, p *peerState, payload io.Reader, mChan chan msg) 
 	if err != nil {
 		return fmt.Errorf("handleMsg parseMsg error: %v. Closing connection", err)
 	}
-	mChan <- m
+	msgChan <- m
 	return nil
 }
 
@@ -358,3 +355,6 @@ func (ipPort ipPort) toNetworkAddress() extendedNetworkAddress {
 // #will exist and will collectively create 8 connections with peers.
 //
 // Random nonce used to detect connections to self.
+//
+// if streamNumberAsClaimedByMsg != self.streamNumber:
+//   print 'The stream number encoded in this msg (' + str(streamNumberAsClaimedByMsg) + ') message does not match the stream number on which it was received. Ignoring it.'

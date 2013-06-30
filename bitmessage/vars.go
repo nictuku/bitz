@@ -66,7 +66,7 @@ var (
 	// after they are written for the first time.
 	nonce         uint64                                 // Filled by init().
 	services      = uint64(ConnectionServiceNodeNetwork) // Only one bit is used for now.
-	streamNumbers = []byte{}                             // Only using stream 1 for now. 
+	streamNumbers = []byte{}                             // Only using stream 1 for now.
 	userAgent     = []byte{}                             // Filled by init().
 
 	bootstrapNodes = [][]string{
