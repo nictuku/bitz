@@ -7,11 +7,10 @@ import (
 	"log"
 	"strings"
 
-	"github.com/cznic/kv"
+	camli "camlistore.org/pkg/client"
 )
 
-// This file implements storage for bitmessage objects, which are kept as un-
-// typed blobs.
+// This file implements storage for bitmessage objects using camlistore.
 
 // ipPortSet holds unique ipPorts.
 type ipPortSet map[ipPort]bool
@@ -32,10 +31,8 @@ func (i *objInfo) addNode(addr ipPort) {
 }
 
 func createObjStore() (*objStore, error) {
-	db, err := kv.CreateMem(new(kv.Options))
-	if err != nil {
-		return nil, fmt.Errorf("createObjInventory failed to create a KV database: %v", err)
-	}
+	db := camli.New("localhost:3179")
+
 	return &objStore{newObjInventory(), db}, nil
 }
 
@@ -43,7 +40,7 @@ func createObjStore() (*objStore, error) {
 // object.
 type objStore struct {
 	inv *objectsInventory
-	db  *kv.DB
+	db  *camli.Client
 }
 
 func (s *objStore) OffaddObjNode(h objHash, addr ipPort, conn io.Writer) {
@@ -111,9 +108,8 @@ func (inv objectsInventory) merge(inv2 objectsInventory) {
 	}
 }
 
-// To be used for writing the inventory on kv?
-
 // save writes the contents of inv in gob format to w.
+// Used for testing.
 func (inv objectsInventory) save(w io.Writer) error {
 	g := gob.NewEncoder(w)
 	return g.Encode(inv)
