@@ -12,6 +12,10 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
+// Pieces of documentation text were extracted from
+// https://bitmessage.org/wiki/Protocol_specification, licensed with the terms
+// http://creativecommons.org/licenses/by/3.0/.
+
 // Package bitmessage implements the BitMessage protocol.
 package bitmessage
 
