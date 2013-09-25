@@ -85,24 +85,34 @@ type parserState struct {
 	pos      int
 }
 
-// messageHeader is the header for an encoded bitmessage. Not to be confused
-// with a "msg" which is one of the commands than can be transmitted inside a
-// message.
+// messageHeader is the header for an encoded bitmessage.
 type messageHeader struct {
 	command       string
 	payloadLength int
 	checksum      uint32
 }
 
+// message is an encoded bitmessage. Not to be confused with a "msg" which is
+// one of the commands than can be transmitted inside a message.
+type message struct {
+	h messageHeader
+	p io.Reader
+}
+
 // readMessage parses a BitMessage message in the protocol-defined format and
 // outputs the message headers and the payload content.
 // It verifies that the content matches the checksum in the message header and
 // throws an error otherwise.
-func readMessage(r io.Reader) (m messageHeader, buf io.Reader, err error) {
-	b := make([]byte, 20)
-	p := parserState{}
+func readMessage(r io.Reader) (*message, error) {
 
-	data := new(bytes.Buffer)
+	var (
+		buf = make([]byte, 20)
+		p   parserState
+
+		header messageHeader
+		data   = new(bytes.Buffer)
+		err    error
+	)
 
 	// The first bytes aren't necessarily the beginning of a message, because
 	// the TCP stream can be in an unknown state - in case there is a bug in
@@ -116,18 +126,18 @@ func readMessage(r io.Reader) (m messageHeader, buf io.Reader, err error) {
 		// data this will block. In the common case, 'r' is a net.Conn with a
 		// deadline set, so it shouldn't be a problem.
 
-		n, err = io.ReadAtLeast(r, b, 20)
+		n, err = io.ReadAtLeast(r, buf, 20)
 		for p.pos = 0; p.pos < n && p.magicPos != 4; p.pos++ {
-			if b[p.pos] == magicHeaderSlice[p.magicPos] {
+			if buf[p.pos] == magicHeaderSlice[p.magicPos] {
 				p.magicPos += 1
 			} else {
 				p.magicPos = 0
 			}
 		}
 		if p.magicPos == 4 {
-			if len(b) > p.pos {
+			if len(buf) > p.pos {
 				// Save the extra bytes that were read unnecessarily.
-				data.Write(b[p.pos:n])
+				data.Write(buf[p.pos:n])
 			}
 			break
 		}
@@ -135,10 +145,10 @@ func readMessage(r io.Reader) (m messageHeader, buf io.Reader, err error) {
 	// Read the message header, including the checksum. The header's length is 20 bytes at least.
 	missingData := 20 - data.Len()
 	if _, err = io.CopyN(data, r, int64(missingData)); err != nil {
-		return m, nil, fmt.Errorf("readMessage: error reading header: %v", err.Error())
+		return nil, fmt.Errorf("readMessage: error reading header: %v", err.Error())
 	}
-	if m, err = parseHeaderFields(data); err != nil {
-		return m, nil, fmt.Errorf("readMessage: %v", err.Error())
+	if header, err = parseHeaderFields(data); err != nil {
+		return nil, fmt.Errorf("readMessage: %v", err.Error())
 	}
 	// TODO performance: depending on the command type, pipe directly do disk
 	// instead of keeping all in memory?
@@ -147,18 +157,18 @@ func readMessage(r io.Reader) (m messageHeader, buf io.Reader, err error) {
 
 	// There might be still some bytes left in 'data'. Calculate how much we
 	// still have to read now.
-	missingData = m.payloadLength - data.Len()
+	missingData = header.payloadLength - data.Len()
 	// Copy the remaining bytes from reader to 'data'.
 	if _, err := io.CopyN(data, r, int64(missingData)); err != nil && err != io.EOF {
-		return m, nil, err
+		return nil, err
 	}
-	if data.Len() != m.payloadLength {
-		return m, nil, fmt.Errorf("readMessage: stream ended before we could get the payload data, wanted length %d, got %d", m.payloadLength, data.Len())
+	if data.Len() != header.payloadLength {
+		return nil, fmt.Errorf("readMessage: stream ended before we could get the payload data, wanted length %d, got %d", header.payloadLength, data.Len())
 	}
-	if checksum := sha512HashPrefix(data.Bytes()); m.checksum != checksum {
-		return m, nil, fmt.Errorf("readMessage: checksum mismatch: message advertised %x, calculated %x", m.checksum, checksum)
+	if checksum := sha512HashPrefix(data.Bytes()); header.checksum != checksum {
+		return nil, fmt.Errorf("readMessage: checksum mismatch: message advertised %x, calculated %x", header.checksum, checksum)
 	}
-	return m, data, nil
+	return &message{h: header, p: data}, nil
 }
 
 func parseHeaderFields(data io.Reader) (m messageHeader, err error) {

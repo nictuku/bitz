@@ -116,17 +116,17 @@ func TestReadMessages(t *testing.T) {
 	for i, tt := range testData {
 		x := new(bytes.Buffer)
 		x.Write(tt.raw)
-		message, payload, err := readMessage(x)
+		m, err := readMessage(x)
 		if err != nil && err.Error() != tt.err.Error() {
 			t.Fatalf("err wanted:\n%q\n	got:\n%q\n (test %d)", tt.err, err, i)
 		}
 		if err != nil {
 			break
 		}
-		if message.command != tt.command {
-			t.Errorf("version wanted %q got %q (test %d)", tt.command, message.command, i)
+		if m.h.command != tt.command {
+			t.Errorf("version wanted %q got %q (test %d)", tt.command, m.h.command, i)
 		}
-		buf, _ := ioutil.ReadAll(payload)
+		buf, _ := ioutil.ReadAll(m.p)
 		if !bytes.Equal(buf, tt.payload) {
 			t.Errorf("payload wanted %q got %q (test %d)", tt.payload, buf, i)
 		}
@@ -140,16 +140,16 @@ func TestWriteAndRead(t *testing.T) {
 	for i, tt := range testData {
 		b := new(bytes.Buffer)
 		writeMessage(b, tt.command, tt.payload)
-		message, payload, err := readMessage(b)
+		m, err := readMessage(b)
 		if err != nil && err.Error() != tt.err.Error() {
 			t.Errorf("err wanted:\n%q\n, got:\n%q\n (test %d)", tt.err, err, i)
 		}
-		if message.command != tt.command {
-			t.Errorf("version wanted %q got %q (test %d)", tt.command, message.command, i)
+		if m.h.command != tt.command {
+			t.Errorf("version wanted %q got %q (test %d)", tt.command, m.h.command, i)
 		}
-		buf, _ := ioutil.ReadAll(payload)
+		buf, _ := ioutil.ReadAll(m.p)
 		if !bytes.Equal(buf, tt.payload) {
-			t.Errorf("payload wanted %q got %q (test %d)", tt.payload, payload, i)
+			t.Errorf("payload wanted %q got %q (test %d)", tt.payload, m.p, i)
 		}
 	}
 }
@@ -191,16 +191,16 @@ func TestParseMsg(t *testing.T) {
 			0x34, 0x8a, 0xa4, 0x9c, 0x09, 0xa1, 0xc7, 0xcb,
 		},
 	}
-	message, b, err := readMessage(buf)
+	m, err := readMessage(buf)
 	if err != nil {
 		t.Fatalf("parseMSG error: %v", err.Error())
 	}
-	if message.command != "msg" {
+	if m.h.command != "msg" {
 		t.Fatalf("msg error: %v", err.Error())
 	}
-	m, err := parseMsg(b)
-	if !reflect.DeepEqual(m, want) {
-		t.Errorf("got %+q, wanted %+q", m, want)
+	msg, err := parseMsg(m.p)
+	if !reflect.DeepEqual(msg, want) {
+		t.Errorf("got %+q, wanted %+q", msg, want)
 	}
 }
 

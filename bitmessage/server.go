@@ -187,34 +187,41 @@ func handleConn(conn *net.TCPConn, resp responses) {
 	for {
 
 		conn.SetDeadline(time.Now().Add(connectionTimeout))
-		m, payload, err := readMessage(conn)
+		m, err := readMessage(conn)
 		if err != nil {
 			log.Println("handleConn:", err)
 			resp.delNodeChan <- p.ipPort.toNetworkAddress()
 			return
 		}
-		log.Printf("got command: %v", m.command)
-		switch m.command {
+
+		command := m.h.command
+		log.Printf("got command: %v", command)
+		switch command {
+
 		case "version":
-			err = handleVersion(conn, p, payload, resp.addNodeChan)
+			err = handleVersion(conn, p, m, resp.addNodeChan)
 		case "addr":
-			err = handleAddr(conn, p, payload, resp.addrsChan)
+			err = handleAddr(conn, p, m, resp.addrsChan)
 		case "verack":
 			err = handleVerack(conn, p, resp.addNodeChan)
 		case "inv":
-			err = handleInv(conn, p, payload, resp.invChan)
+			err = handleInv(conn, p, m, resp.invChan)
 		case "msg":
-			err = handleMsg(conn, p, payload, resp.msgChan)
+			err = handleMsg(conn, p, m, resp.msgChan)
 		case "broadcast":
-			err = handleBroadcast(conn, p, payload, resp.broadcastChan)
+			err = handleBroadcast(conn, p, m, resp.broadcastChan)
 		default:
 			// XXX
-			err = fmt.Errorf("ignoring unknown command %q", m.command)
+			err = fmt.Errorf("ignoring unknown command %q", command)
 			log.Println(err.Error())
 			err = nil
 		}
+
+		// The handler functions must be able to run concurrenly, so don't use
+		// m after calling the functions above.
+
 		if err != nil {
-			log.Printf("error while processing command %v: %v", m.command, err)
+			log.Printf("error while processing command %v: %v", command, err)
 			resp.delNodeChan <- ipPort(conn.RemoteAddr().String()).toNetworkAddress()
 			// Disconnects from node.
 			return
@@ -222,11 +229,11 @@ func handleConn(conn *net.TCPConn, resp responses) {
 	}
 }
 
-func handleVersion(conn io.Writer, p *peerState, payload io.Reader, addNode chan extendedNetworkAddress) error {
+func handleVersion(conn io.Writer, p *peerState, m *message, addNode chan extendedNetworkAddress) error {
 	if p.established {
 		return fmt.Errorf("received a 'version' message from a host we already went through a version exchange. Closing the connection.")
 	}
-	version, err := parseVersion(payload)
+	version, err := parseVersion(m.p)
 	if err != nil {
 		return fmt.Errorf("parseVersion: %v", err)
 	}
@@ -261,11 +268,11 @@ func handleVerack(conn io.Writer, p *peerState, addNode chan extendedNetworkAddr
 	return nil
 }
 
-func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan []extendedNetworkAddress) error {
+func handleAddr(conn io.Writer, p *peerState, m *message, respNodes chan []extendedNetworkAddress) error {
 	if !p.established {
 		return fmt.Errorf("version unknown. Closing connection")
 	}
-	addrs, err := parseAddr(payload)
+	addrs, err := parseAddr(m.p)
 	if err != nil {
 		return fmt.Errorf("parseAddr error: %v. Closing connection", err)
 	}
@@ -275,11 +282,11 @@ func handleAddr(conn io.Writer, p *peerState, payload io.Reader, respNodes chan 
 
 var i = 0
 
-func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan nodeInv) error {
+func handleInv(conn io.Writer, p *peerState, m *message, obj chan nodeInv) error {
 	if !p.established {
 		return fmt.Errorf("version unknown. Closing connection")
 	}
-	invs, err := parseInv(payload)
+	invs, err := parseInv(m.p)
 	if err != nil {
 		return fmt.Errorf("parseInv error: %v. Closing connection", err)
 	}
@@ -291,23 +298,23 @@ func handleInv(conn io.Writer, p *peerState, payload io.Reader, obj chan nodeInv
 	return nil
 }
 
-func handleMsg(conn io.Writer, p *peerState, payload io.Reader, msgChan chan msg) error {
+func handleMsg(conn io.Writer, p *peerState, m *message, msgChan chan msg) error {
 	if !p.established {
 		return fmt.Errorf("version unknown. Closing connection")
 	}
-	m, err := parseMsg(payload)
+	msg, err := parseMsg(m.p)
 	if err != nil {
 		return fmt.Errorf("handleMsg parseMsg error: %v. Closing connection", err)
 	}
-	msgChan <- m
+	msgChan <- msg
 	return nil
 }
 
-func handleBroadcast(conn io.Writer, p *peerState, payload io.Reader, bChan chan broadcast) error {
+func handleBroadcast(conn io.Writer, p *peerState, m *message, bChan chan broadcast) error {
 	if !p.established {
 		return fmt.Errorf("version unknown. Closing connection")
 	}
-	b, err := parseBroadcast(payload)
+	b, err := parseBroadcast(m.p)
 	if err != nil {
 		return fmt.Errorf("handleBroadcast parseBroadcast error: %v. Closing connection", err)
 	}
