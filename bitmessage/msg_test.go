@@ -116,15 +116,15 @@ func TestReadMessages(t *testing.T) {
 	for i, tt := range testData {
 		x := new(bytes.Buffer)
 		x.Write(tt.raw)
-		cmd, payload, err := readMessage(x)
+		message, payload, err := readMessage(x)
 		if err != nil && err.Error() != tt.err.Error() {
 			t.Fatalf("err wanted:\n%q\n	got:\n%q\n (test %d)", tt.err, err, i)
 		}
 		if err != nil {
 			break
 		}
-		if cmd != tt.command {
-			t.Errorf("version wanted %q got %q (test %d)", tt.command, cmd, i)
+		if message.command != tt.command {
+			t.Errorf("version wanted %q got %q (test %d)", tt.command, message.command, i)
 		}
 		buf, _ := ioutil.ReadAll(payload)
 		if !bytes.Equal(buf, tt.payload) {
@@ -140,12 +140,12 @@ func TestWriteAndRead(t *testing.T) {
 	for i, tt := range testData {
 		b := new(bytes.Buffer)
 		writeMessage(b, tt.command, tt.payload)
-		cmd, payload, err := readMessage(b)
+		message, payload, err := readMessage(b)
 		if err != nil && err.Error() != tt.err.Error() {
 			t.Errorf("err wanted:\n%q\n, got:\n%q\n (test %d)", tt.err, err, i)
 		}
-		if cmd != tt.command {
-			t.Errorf("version wanted %q got %q (test %d)", tt.command, cmd, i)
+		if message.command != tt.command {
+			t.Errorf("version wanted %q got %q (test %d)", tt.command, message.command, i)
 		}
 		buf, _ := ioutil.ReadAll(payload)
 		if !bytes.Equal(buf, tt.payload) {
@@ -191,11 +191,11 @@ func TestParseMsg(t *testing.T) {
 			0x34, 0x8a, 0xa4, 0x9c, 0x09, 0xa1, 0xc7, 0xcb,
 		},
 	}
-	cmd, b, err := readMessage(buf)
+	message, b, err := readMessage(buf)
 	if err != nil {
 		t.Fatalf("parseMSG error: %v", err.Error())
 	}
-	if cmd != "msg" {
+	if message.command != "msg" {
 		t.Fatalf("msg error: %v", err.Error())
 	}
 	m, err := parseMsg(b)

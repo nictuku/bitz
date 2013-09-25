@@ -36,7 +36,9 @@ func newobjInfo() *objInfo {
 	return &objInfo{make(ipPortSet)}
 }
 
+// objInfo is the metadata about a particular object.
 type objInfo struct {
+	// Nodes is the list of nodes that should have this object.
 	Nodes ipPortSet
 }
 
@@ -62,15 +64,20 @@ func (s *objStore) OffaddObjNode(h objHash, addr ipPort, conn io.Writer) {
 	if s.shouldRetrieve(h) {
 		log.Println("retrieving %x [%v]", h, addr)
 		iv := inventoryVector{h}
-
 		writeGetData(conn, []inventoryVector{iv})
 	}
 }
 
 func (s *objStore) shouldRetrieve(h objHash) bool {
+	// XXX
 	return strings.HasPrefix(fmt.Sprintf("%x", h), "3")
 }
 
+func (s *objStore) store(h objHash, data []byte) {}
+
+// mergeInventory is called when we receive the inventory list from another
+// node. We must record that in our map of objects-to-nodes and retrieve any
+// pending items if necessary.
 func (s *objStore) mergeInventory(inv2 objectsInventory, conn io.Writer) {
 	s.inv.merge(inv2)
 	for h, _ := range inv2.M {
@@ -120,6 +127,7 @@ func (inv objectsInventory) merge(inv2 objectsInventory) {
 			inv.add(h, addr)
 		}
 	}
+	// TODO: Persist the objectsInventory somewhere.
 }
 
 // save writes the contents of inv in gob format to w.

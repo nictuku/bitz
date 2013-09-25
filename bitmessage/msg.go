@@ -81,18 +81,24 @@ func writeMessage(w io.Writer, command string, payload []byte) {
 }
 
 type parserState struct {
-	magicPos      int // if == 4 means all magic bytes have been found and is ready to read data.
-	pos           int
-	payloadLength int
+	magicPos int // if == 4 means all magic bytes have been found and is ready to read data.
+	pos      int
+}
+
+// messageHeader is the header for an encoded bitmessage. Not to be confused
+// with a "msg" which is one of the commands than can be transmitted inside a
+// message.
+type messageHeader struct {
 	command       string
+	payloadLength int
 	checksum      uint32
 }
 
 // readMessage parses a BitMessage message in the protocol-defined format and
-// outputs the name of the command in the message, plus the payload content.
+// outputs the message headers and the payload content.
 // It verifies that the content matches the checksum in the message header and
 // throws an error otherwise.
-func readMessage(r io.Reader) (command string, buf io.Reader, err error) {
+func readMessage(r io.Reader) (m messageHeader, buf io.Reader, err error) {
 	b := make([]byte, 20)
 	p := parserState{}
 
@@ -129,10 +135,10 @@ func readMessage(r io.Reader) (command string, buf io.Reader, err error) {
 	// Read the message header, including the checksum. The header's length is 20 bytes at least.
 	missingData := 20 - data.Len()
 	if _, err = io.CopyN(data, r, int64(missingData)); err != nil {
-		return "", nil, fmt.Errorf("readMessage: error reading header: %v", err.Error())
+		return m, nil, fmt.Errorf("readMessage: error reading header: %v", err.Error())
 	}
-	if err := parseHeaderFields(&p, data); err != nil {
-		return p.command, nil, fmt.Errorf("readMessage: %v", err.Error())
+	if m, err = parseHeaderFields(data); err != nil {
+		return m, nil, fmt.Errorf("readMessage: %v", err.Error())
 	}
 	// TODO performance: depending on the command type, pipe directly do disk
 	// instead of keeping all in memory?
@@ -141,30 +147,30 @@ func readMessage(r io.Reader) (command string, buf io.Reader, err error) {
 
 	// There might be still some bytes left in 'data'. Calculate how much we
 	// still have to read now.
-	missingData = p.payloadLength - data.Len()
+	missingData = m.payloadLength - data.Len()
 	// Copy the remaining bytes from reader to 'data'.
 	if _, err := io.CopyN(data, r, int64(missingData)); err != nil && err != io.EOF {
-		return p.command, nil, err
+		return m, nil, err
 	}
-	if data.Len() != p.payloadLength {
-		return p.command, nil, fmt.Errorf("readMessage: stream ended before we could get the payload data, wanted length %d, got %d", p.payloadLength, data.Len())
+	if data.Len() != m.payloadLength {
+		return m, nil, fmt.Errorf("readMessage: stream ended before we could get the payload data, wanted length %d, got %d", m.payloadLength, data.Len())
 	}
-	if checksum := sha512HashPrefix(data.Bytes()); p.checksum != checksum {
-		return p.command, nil, fmt.Errorf("readMessage: checksum mismatch: message advertised %x, calculated %x", p.checksum, checksum)
+	if checksum := sha512HashPrefix(data.Bytes()); m.checksum != checksum {
+		return m, nil, fmt.Errorf("readMessage: checksum mismatch: message advertised %x, calculated %x", m.checksum, checksum)
 	}
-	return p.command, data, nil
+	return m, data, nil
 }
 
-func parseHeaderFields(p *parserState, data io.Reader) (err error) {
-	if p.command, err = parseCommand(data); err != nil {
-		return fmt.Errorf("headerFields: %v", err.Error())
+func parseHeaderFields(data io.Reader) (m messageHeader, err error) {
+	if m.command, err = parseCommand(data); err != nil {
+		return m, fmt.Errorf("headerFields: %v", err.Error())
 	}
-	p.payloadLength = int(readUint32(data))
-	if p.payloadLength > maxPayloadLength {
-		return fmt.Errorf("headerFields: advertised payload length too large, aborting.")
+	m.payloadLength = int(readUint32(data))
+	if m.payloadLength > maxPayloadLength {
+		return m, fmt.Errorf("headerFields: advertised payload length too large, aborting.")
 	}
-	p.checksum = readUint32(data)
-	return nil
+	m.checksum = readUint32(data)
+	return m, nil
 }
 
 func parseCommand(r io.Reader) (command string, err error) {

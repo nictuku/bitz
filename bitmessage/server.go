@@ -187,14 +187,14 @@ func handleConn(conn *net.TCPConn, resp responses) {
 	for {
 
 		conn.SetDeadline(time.Now().Add(connectionTimeout))
-		command, payload, err := readMessage(conn)
+		m, payload, err := readMessage(conn)
 		if err != nil {
 			log.Println("handleConn:", err)
 			resp.delNodeChan <- p.ipPort.toNetworkAddress()
 			return
 		}
-		log.Printf("got command: %v", command)
-		switch command {
+		log.Printf("got command: %v", m.command)
+		switch m.command {
 		case "version":
 			err = handleVersion(conn, p, payload, resp.addNodeChan)
 		case "addr":
@@ -209,12 +209,12 @@ func handleConn(conn *net.TCPConn, resp responses) {
 			err = handleBroadcast(conn, p, payload, resp.broadcastChan)
 		default:
 			// XXX
-			err = fmt.Errorf("ignoring unknown command %q", command)
+			err = fmt.Errorf("ignoring unknown command %q", m.command)
 			log.Println(err.Error())
 			err = nil
 		}
 		if err != nil {
-			log.Printf("error while processing command %v: %v", command, err)
+			log.Printf("error while processing command %v: %v", m.command, err)
 			resp.delNodeChan <- ipPort(conn.RemoteAddr().String()).toNetworkAddress()
 			// Disconnects from node.
 			return
